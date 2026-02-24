@@ -5,12 +5,21 @@ import { config } from '../config';
 import { createApiRouter } from './api';
 import { channelManagerEvents } from '../channels/manager';
 import { agentEvents } from '../agent/loop';
+import { containerEvents } from '../agent/container-runner';
+import { loopEvents } from '../agent/loop-mode';
+import { authMiddleware, rateLimitMiddleware } from '../auth/middleware';
 
 export function createServer() {
   const app = express();
   const wsInstance = expressWs(app);
 
   app.use(express.json());
+
+  // Rate limiting on API endpoints
+  app.use('/api', rateLimitMiddleware(120, 60));
+
+  // Auth middleware for API (except health and auth endpoints)
+  app.use('/api', authMiddleware);
 
   // Serve static UI files
   app.use(express.static(path.join(__dirname, '..', '..', 'ui')));
@@ -45,14 +54,28 @@ export function createServer() {
     }
   }
 
-  // Forward events to WebSocket clients
+  // Forward channel events
   channelManagerEvents.on('channel:status', (data) => broadcast('channel:status', data));
   channelManagerEvents.on('message:incoming', (data) => broadcast('message:incoming', data));
   channelManagerEvents.on('message:reply', (data) => broadcast('message:reply', data));
   channelManagerEvents.on('whatsapp:qr', (data) => broadcast('whatsapp:qr', data));
+
+  // Forward agent events
   agentEvents.on('run:start', (data) => broadcast('run:start', data));
   agentEvents.on('run:complete', (data) => broadcast('run:complete', data));
   agentEvents.on('run:error', (data) => broadcast('run:error', data));
+
+  // Forward container events
+  containerEvents.on('container:start', (data) => broadcast('container:start', data));
+  containerEvents.on('container:end', (data) => broadcast('container:end', data));
+
+  // Forward loop task events
+  loopEvents.on('task:start', (data) => broadcast('task:start', data));
+  loopEvents.on('task:iteration', (data) => broadcast('task:iteration', data));
+  loopEvents.on('task:output', (data) => broadcast('task:output', data));
+  loopEvents.on('task:complete', (data) => broadcast('task:complete', data));
+  loopEvents.on('task:error', (data) => broadcast('task:error', data));
+  loopEvents.on('task:stop', (data) => broadcast('task:stop', data));
 
   // Fallback: serve UI for any non-API route
   app.get('*', (_req, res) => {

@@ -1,7 +1,7 @@
 import { config } from './config';
 import { createServer } from './gateway/server';
 import { initChannels } from './channels/manager';
-import { loadSystemPrompt } from './agent/loop';
+import { loadSystemPrompt, initAgentRuntime } from './agent/loop';
 
 async function main() {
   console.log('='.repeat(50));
@@ -16,6 +16,9 @@ async function main() {
 
   // Load system prompt
   loadSystemPrompt();
+
+  // Initialize agent runtime (checks container availability)
+  await initAgentRuntime();
 
   // Create HTTP/WS server
   const app = createServer();

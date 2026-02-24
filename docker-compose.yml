@@ -12,8 +12,18 @@ services:
     volumes:
       - gateway-data:/data
       - ./system-prompt.md:/data/system-prompt.md:ro
+      # Mount Docker socket for container isolation mode (optional)
+      # Only needed if AGENT_CONTAINER_MODE=true
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - NODE_ENV=production
+
+  # Build the agent runner image (used when AGENT_CONTAINER_MODE=true)
+  agent-runner:
+    build: ./agent-runner
+    image: loop-gateway-agent:latest
+    profiles:
+      - build-agent  # Only built when explicitly requested
 
 volumes:
   gateway-data:

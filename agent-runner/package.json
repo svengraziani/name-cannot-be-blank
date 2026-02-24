@@ -1,0 +1,9 @@
+{
+  "name": "loop-gateway-agent-runner",
+  "version": "1.0.0",
+  "description": "Isolated agent runner for Loop Gateway - runs inside Docker containers",
+  "main": "runner.js",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0"
+  }
+}

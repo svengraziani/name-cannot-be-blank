@@ -6,7 +6,9 @@ import {
   addMessage,
   createAgentRun,
   updateAgentRun,
+  logApiCall,
 } from '../db/sqlite';
+import { runInContainer, checkContainerRuntime, ContainerInput } from './container-runner';
 import { EventEmitter } from 'events';
 
 export const agentEvents = new EventEmitter();
@@ -39,11 +41,35 @@ interface AgentResponse {
   outputTokens: number;
 }
 
+// Container isolation mode
+let containerMode = process.env.AGENT_CONTAINER_MODE === 'true';
+let containerAvailable = false;
+
+export async function initAgentRuntime(): Promise<void> {
+  if (containerMode) {
+    const check = await checkContainerRuntime();
+    if (check.available) {
+      containerAvailable = true;
+      console.log('[agent] Container isolation mode: ENABLED');
+    } else {
+      console.warn(`[agent] Container mode requested but unavailable: ${check.error}`);
+      console.warn('[agent] Falling back to direct mode');
+      containerMode = false;
+    }
+  } else {
+    console.log('[agent] Running in direct mode (set AGENT_CONTAINER_MODE=true for isolation)');
+  }
+}
+
+export function isContainerMode(): boolean {
+  return containerMode && containerAvailable;
+}
+
 /**
  * Process a message through the agent loop:
  * 1. Load conversation history
  * 2. Build context (system prompt + history + new message)
- * 3. Call Claude API
+ * 3. Call Claude API (direct or via container)
  * 4. Store response + track usage
  * 5. Emit events for UI
  */
@@ -69,8 +95,27 @@ export async function processMessage(
       content: m.content,
     }));
 
-    // Call Claude
-    const response = await callAgent(messages);
+    // Call Claude - either via container or directly
+    let response: AgentResponse;
+    const startTime = Date.now();
+
+    if (isContainerMode()) {
+      response = await callAgentContainer(messages);
+    } else {
+      response = await callAgentDirect(messages);
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    // Log API call for usage tracking
+    logApiCall({
+      conversation_id: conversationId,
+      model: config.agentModel,
+      input_tokens: response.inputTokens,
+      output_tokens: response.outputTokens,
+      duration_ms: durationMs,
+      isolated: isContainerMode(),
+    });
 
     // Store assistant response
     addMessage(conversationId, 'assistant', response.content, channelType);
@@ -87,6 +132,8 @@ export async function processMessage(
       channelType,
       inputTokens: response.inputTokens,
       outputTokens: response.outputTokens,
+      durationMs,
+      containerMode: isContainerMode(),
     });
 
     return response.content;
@@ -99,7 +146,10 @@ export async function processMessage(
   }
 }
 
-async function callAgent(
+/**
+ * Direct API call (no container isolation).
+ */
+async function callAgentDirect(
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
 ): Promise<AgentResponse> {
   const response = await getClient().messages.create({
@@ -117,4 +167,22 @@ async function callAgent(
     inputTokens: response.usage.input_tokens,
     outputTokens: response.usage.output_tokens,
   };
+}
+
+/**
+ * Containerized API call (nanoclaw pattern).
+ * Passes API key via stdin, runs in isolated Docker container.
+ */
+async function callAgentContainer(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+): Promise<AgentResponse> {
+  const input: ContainerInput = {
+    apiKey: config.anthropicApiKey,
+    model: config.agentModel,
+    maxTokens: config.agentMaxTokens,
+    systemPrompt,
+    messages,
+  };
+
+  return runInContainer(input);
 }
