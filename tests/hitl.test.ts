@@ -279,8 +279,8 @@ describe('HITL Manager: checkApprovalRequired', () => {
 
 describe('HITL Manager: respondToApproval', () => {
   test('respondToApproval resolves waiting promise', async () => {
-    // Start an approval request with a long timeout
-    const approvalPromise = requestApproval({
+    // requestApproval now returns { approvalId, promise }
+    const { approvalId, promise } = requestApproval({
       runId: 100,
       conversationId: 'conv-100',
       toolName: 'run_script',
@@ -290,27 +290,20 @@ describe('HITL Manager: respondToApproval', () => {
       timeoutAction: 'reject',
     });
 
-    // Give it a moment to register
-    await new Promise(r => setTimeout(r, 10));
+    assert.ok(approvalId, 'should return an approvalId');
 
-    // Get the pending approval from DB
-    const pending = getPendingApprovals();
-    const latest = pending.find(p => p.runId === 100);
-    assert.ok(latest, 'should find the pending approval');
-
-    // Approve it
-    const ok = respondToApproval(latest!.id, true, 'Looks safe', 'tester');
+    // Use the returned ID directly — no DB lookup needed
+    const ok = respondToApproval(approvalId, true, 'Looks safe', 'tester');
     assert.ok(ok, 'respondToApproval should return true');
 
-    // The promise should now resolve
-    const result = await approvalPromise;
+    const result = await promise;
     assert.equal(result.approved, true);
     assert.equal(result.reason, 'Looks safe');
     assert.equal(result.respondedBy, 'tester');
   });
 
   test('respondToApproval with rejection', async () => {
-    const approvalPromise = requestApproval({
+    const { approvalId, promise } = requestApproval({
       runId: 101,
       conversationId: 'conv-101',
       toolName: 'run_script',
@@ -320,14 +313,10 @@ describe('HITL Manager: respondToApproval', () => {
       timeoutAction: 'reject',
     });
 
-    await new Promise(r => setTimeout(r, 10));
+    const ok = respondToApproval(approvalId, false, 'Dangerous command');
+    assert.ok(ok);
 
-    const pending = getPendingApprovals();
-    const latest = pending.find(p => p.runId === 101);
-    assert.ok(latest);
-
-    respondToApproval(latest!.id, false, 'Dangerous command');
-    const result = await approvalPromise;
+    const result = await promise;
     assert.equal(result.approved, false);
     assert.equal(result.reason, 'Dangerous command');
   });
@@ -340,7 +329,7 @@ describe('HITL Manager: respondToApproval', () => {
 
 describe('HITL Manager: timeout behavior', () => {
   test('approval times out with reject action', async () => {
-    const approvalPromise = requestApproval({
+    const { promise } = requestApproval({
       runId: 200,
       conversationId: 'conv-200',
       toolName: 'run_script',
@@ -350,13 +339,13 @@ describe('HITL Manager: timeout behavior', () => {
       timeoutAction: 'reject',
     });
 
-    const result = await approvalPromise;
+    const result = await promise;
     assert.equal(result.approved, false);
     assert.ok(result.reason?.includes('timed out'));
   });
 
   test('approval times out with approve action', async () => {
-    const approvalPromise = requestApproval({
+    const { promise } = requestApproval({
       runId: 201,
       conversationId: 'conv-201',
       toolName: 'http_request',
@@ -366,7 +355,7 @@ describe('HITL Manager: timeout behavior', () => {
       timeoutAction: 'approve',
     });
 
-    const result = await approvalPromise;
+    const result = await promise;
     assert.equal(result.approved, true);
     assert.ok(result.reason?.includes('timed out'));
   });

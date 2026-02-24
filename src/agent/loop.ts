@@ -276,7 +276,7 @@ async function callAgentDirect(
             riskLevel: approvalCheck.riskLevel,
           });
 
-          const approvalResult = await requestApproval({
+          const { promise: approvalPromise } = requestApproval({
             runId,
             conversationId: conversationId || '',
             groupId,
@@ -286,6 +286,7 @@ async function callAgentDirect(
             timeoutSeconds: approvalCheck.timeoutSeconds,
             timeoutAction: approvalCheck.timeoutAction,
           });
+          const approvalResult = await approvalPromise;
 
           if (!approvalResult.approved) {
             console.log(`[agent] Tool ${block.name} rejected: ${approvalResult.reason || 'no reason'}`);

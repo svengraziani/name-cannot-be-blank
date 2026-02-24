@@ -67,8 +67,8 @@ export function checkApprovalRequired(
 }
 
 /**
- * Request approval for a tool call. Returns a promise that resolves when
- * a human responds or the timeout expires.
+ * Request approval for a tool call. Returns the approval ID and a promise
+ * that resolves when a human responds or the timeout expires.
  */
 export function requestApproval(params: {
   runId: number;
@@ -80,7 +80,7 @@ export function requestApproval(params: {
   riskLevel: RiskLevel;
   timeoutSeconds: number;
   timeoutAction: 'reject' | 'approve';
-}): Promise<ApprovalResponse> {
+}): { approvalId: string; promise: Promise<ApprovalResponse> } {
   const approval = createApprovalRequest({
     runId: params.runId,
     conversationId: params.conversationId,
@@ -95,7 +95,7 @@ export function requestApproval(params: {
   // Emit event for WebSocket broadcast and channel notifications
   approvalEvents.emit('approval:required', approval);
 
-  return new Promise<ApprovalResponse>((resolve) => {
+  const promise = new Promise<ApprovalResponse>((resolve) => {
     const timeout = setTimeout(() => {
       pendingCallbacks.delete(approval.id);
       const action = params.timeoutAction;
@@ -115,6 +115,8 @@ export function requestApproval(params: {
 
     pendingCallbacks.set(approval.id, { resolve, timeout });
   });
+
+  return { approvalId: approval.id, promise };
 }
 
 /**
