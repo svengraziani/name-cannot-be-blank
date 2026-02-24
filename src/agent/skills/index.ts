@@ -19,3 +19,4 @@ export {
   getSkillsDir,
 } from './loader';
 export { exportBuiltinSkills } from './builtin-exporter';
+export { startSkillWatcher, stopSkillWatcher, skillWatcherEvents } from './watcher';

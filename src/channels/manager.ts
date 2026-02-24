@@ -97,6 +97,13 @@ export async function removeChannel(id: string): Promise<void> {
 }
 
 /**
+ * Get a channel adapter by ID (for output routing).
+ */
+export function getChannelAdapter(channelId: string): ChannelAdapter | undefined {
+  return adapters.get(channelId);
+}
+
+/**
  * Get status of all channels.
  */
 export function getChannelStatuses(): Array<{

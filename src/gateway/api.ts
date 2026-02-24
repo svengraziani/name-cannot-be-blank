@@ -47,6 +47,33 @@ import {
   unassignChannelFromGroup,
   getAgentGroupStats,
 } from '../agent/groups';
+import {
+  getActiveAgents,
+  getRecentA2AMessages,
+  getA2AConversationMessages,
+  getSubAgentStats,
+  PREDEFINED_ROLES,
+} from '../agent/a2a';
+import {
+  createJob,
+  getAllJobs,
+  getJob,
+  updateJob,
+  deleteJob,
+  getJobRuns,
+  scheduleJob,
+  unscheduleJob,
+  executeJob,
+  getSchedulerStats,
+  createCalendarSource,
+  getAllCalendarSources,
+  deleteCalendarSource,
+  getCalendarEvents,
+  syncCalendar,
+  scheduleCalendarPoll,
+  stopCalendarPoll,
+  formatTriggerDescription,
+} from '../scheduler';
 
 export function createApiRouter(): Router {
   const router = Router();
@@ -457,6 +484,210 @@ export function createApiRouter(): Router {
     try {
       const stats = getAgentGroupStats(req.params.id as string);
       res.json(stats);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== A2A ====================
+
+  router.get('/agents', (_req: Request, res: Response) => {
+    try {
+      const agents = getActiveAgents();
+      const stats = getSubAgentStats();
+      res.json({ agents, stats, roles: PREDEFINED_ROLES });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/a2a/messages', (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const messages = getRecentA2AMessages(limit);
+      res.json(messages);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/a2a/conversations/:id', (req: Request, res: Response) => {
+    try {
+      const messages = getA2AConversationMessages(req.params.id as string);
+      res.json(messages);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== Scheduler ====================
+
+  router.get('/scheduler/jobs', (_req: Request, res: Response) => {
+    try {
+      const jobs = getAllJobs().map(j => ({
+        ...j,
+        triggerDescription: formatTriggerDescription(j.trigger),
+      }));
+      res.json(jobs);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/scheduler/jobs', (req: Request, res: Response) => {
+    try {
+      const { name, description, trigger, action, output } = req.body;
+      if (!name || !trigger || !action || !output) {
+        res.status(400).json({ error: 'name, trigger, action, and output are required' });
+        return;
+      }
+      if (!trigger.timezone) trigger.timezone = 'UTC';
+      if (!action.maxIterations) action.maxIterations = 10;
+
+      const job = createJob({ name, description, trigger, action, output });
+      scheduleJob(job.id);
+      res.json({ ...job, triggerDescription: formatTriggerDescription(job.trigger) });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.put('/scheduler/jobs/:id', (req: Request, res: Response) => {
+    try {
+      updateJob(req.params.id as string, req.body);
+      const job = getJob(req.params.id as string);
+      if (job?.enabled) {
+        scheduleJob(job.id);
+      } else if (job) {
+        unscheduleJob(job.id);
+      }
+      res.json({ status: 'updated' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  });
+
+  router.delete('/scheduler/jobs/:id', (req: Request, res: Response) => {
+    try {
+      unscheduleJob(req.params.id as string);
+      deleteJob(req.params.id as string);
+      res.json({ status: 'deleted' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/scheduler/jobs/:id/toggle', (req: Request, res: Response) => {
+    try {
+      const { enabled } = req.body;
+      if (typeof enabled !== 'boolean') {
+        res.status(400).json({ error: 'enabled (boolean) is required' });
+        return;
+      }
+      updateJob(req.params.id as string, { enabled });
+      if (enabled) {
+        scheduleJob(req.params.id as string);
+      } else {
+        unscheduleJob(req.params.id as string);
+      }
+      res.json({ status: 'toggled', enabled });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/scheduler/jobs/:id/run', async (req: Request, res: Response) => {
+    try {
+      executeJob(req.params.id as string);
+      res.json({ status: 'triggered' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/scheduler/jobs/:id/runs', (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 20;
+      const runs = getJobRuns(req.params.id as string, limit);
+      res.json(runs);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/scheduler/stats', (_req: Request, res: Response) => {
+    res.json(getSchedulerStats());
+  });
+
+  // ==================== Calendars ====================
+
+  router.get('/scheduler/calendars', (_req: Request, res: Response) => {
+    try {
+      res.json(getAllCalendarSources());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/scheduler/calendars', (req: Request, res: Response) => {
+    try {
+      const { name, url, pollIntervalMinutes, agentGroupId } = req.body;
+      if (!name || !url) {
+        res.status(400).json({ error: 'name and url are required' });
+        return;
+      }
+      const source = createCalendarSource({ name, url, pollIntervalMinutes, agentGroupId });
+      scheduleCalendarPoll(source.id, source.url, source.pollIntervalMinutes || 15);
+      res.json(source);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/scheduler/calendars/:id/sync', async (req: Request, res: Response) => {
+    try {
+      const source = getAllCalendarSources().find(s => s.id === req.params.id);
+      if (!source) {
+        res.status(404).json({ error: 'Calendar source not found' });
+        return;
+      }
+      const count = await syncCalendar(source.id, source.url);
+      res.json({ status: 'synced', eventCount: count });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/scheduler/calendars/:id/events', (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const events = getCalendarEvents(req.params.id as string, limit);
+      res.json(events);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.delete('/scheduler/calendars/:id', (req: Request, res: Response) => {
+    try {
+      stopCalendarPoll(req.params.id as string);
+      deleteCalendarSource(req.params.id as string);
+      res.json({ status: 'deleted' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });
