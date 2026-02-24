@@ -58,15 +58,29 @@ export class WhatsAppAdapter extends ChannelAdapter {
       }
 
       // Dynamic import of baileys
-      const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = await import('baileys');
+      const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers, fetchLatestBaileysVersion } = await import('baileys');
 
       const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
+
+      // Fetch latest WA Web version - the bundled version expires regularly,
+      // causing 405 rejections during device registration
+      let version: [number, number, number] | undefined;
+      try {
+        const versionInfo = await fetchLatestBaileysVersion();
+        if (versionInfo.version) {
+          version = versionInfo.version;
+          console.log(`[whatsapp:${this.channelId}] Using WA version: ${version.join('.')}`);
+        }
+      } catch (err) {
+        console.warn(`[whatsapp:${this.channelId}] Failed to fetch latest version, using bundled default`);
+      }
 
       this.sock = makeWASocket({
         auth: state,
         browser: Browsers.ubuntu('Chrome'),
         connectTimeoutMs: 20000,
         qrTimeout: 40000,
+        ...(version ? { version } : {}),
       });
 
       this.sock.ev.on('creds.update', saveCreds);
