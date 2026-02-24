@@ -30,6 +30,23 @@ import {
   setupAdmin,
   isSetupRequired,
 } from '../auth/middleware';
+import {
+  getAllSkills,
+  toggleSkill,
+  deleteSkill,
+  installSkill,
+  updateSkill,
+} from '../agent/skills';
+import {
+  createAgentGroup,
+  getAllAgentGroups,
+  getAgentGroup,
+  updateAgentGroup,
+  deleteAgentGroup,
+  assignChannelToGroup,
+  unassignChannelFromGroup,
+  getAgentGroupStats,
+} from '../agent/groups';
 
 export function createApiRouter(): Router {
   const router = Router();
@@ -242,6 +259,208 @@ export function createApiRouter(): Router {
       description: t.description,
     }));
     res.json(tools);
+  });
+
+  // ==================== Skills ====================
+
+  router.get('/skills', (_req: Request, res: Response) => {
+    try {
+      const skills = getAllSkills();
+      res.json(skills);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/skills', (req: Request, res: Response) => {
+    try {
+      const { manifest, handler } = req.body;
+      if (!manifest || !handler) {
+        res.status(400).json({ error: 'manifest and handler are required' });
+        return;
+      }
+      if (!manifest.name || !manifest.description || !manifest.inputSchema) {
+        res.status(400).json({ error: 'manifest must include name, description, and inputSchema' });
+        return;
+      }
+      // Set defaults
+      manifest.version = manifest.version || '1.0.0';
+      manifest.handler = manifest.handler || './handler.js';
+      manifest.containerCompatible = manifest.containerCompatible ?? false;
+      manifest.sandbox = true; // custom skills are always sandboxed
+
+      installSkill(manifest, handler);
+      res.json({ status: 'installed', name: manifest.name });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  });
+
+  router.put('/skills/:name', (req: Request, res: Response) => {
+    try {
+      const { manifest, handler } = req.body;
+      updateSkill(req.params.name as string, {
+        manifest,
+        handlerContent: handler,
+      });
+      res.json({ status: 'updated' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  });
+
+  router.delete('/skills/:name', (req: Request, res: Response) => {
+    try {
+      const deleted = deleteSkill(req.params.name as string);
+      if (!deleted) {
+        res.status(404).json({ error: 'Skill not found' });
+        return;
+      }
+      res.json({ status: 'deleted' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  });
+
+  router.post('/skills/:name/toggle', (req: Request, res: Response) => {
+    try {
+      const { enabled } = req.body;
+      if (typeof enabled !== 'boolean') {
+        res.status(400).json({ error: 'enabled (boolean) is required' });
+        return;
+      }
+      toggleSkill(req.params.name as string, enabled);
+      res.json({ status: 'toggled', name: req.params.name, enabled });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== Agent Groups ====================
+
+  router.get('/agent-groups', (_req: Request, res: Response) => {
+    try {
+      const groups = getAllAgentGroups();
+      // Strip encrypted API keys from response
+      const safe = groups.map(g => ({
+        ...g,
+        apiKeyEncrypted: undefined,
+        hasApiKey: !!g.apiKeyEncrypted,
+      }));
+      res.json(safe);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/agent-groups', (req: Request, res: Response) => {
+    try {
+      const {
+        name, description, systemPrompt, apiKey,
+        model, maxTokens, skills, roles,
+        containerMode, maxConcurrentAgents,
+        budgetMaxTokensDay, budgetMaxTokensMonth, budgetAlertThreshold,
+      } = req.body;
+
+      if (!name || !systemPrompt) {
+        res.status(400).json({ error: 'name and systemPrompt are required' });
+        return;
+      }
+
+      const group = createAgentGroup({
+        name, description, systemPrompt, apiKey,
+        model, maxTokens, skills, roles,
+        containerMode, maxConcurrentAgents,
+        budgetMaxTokensDay, budgetMaxTokensMonth, budgetAlertThreshold,
+      });
+
+      res.json({
+        ...group,
+        apiKeyEncrypted: undefined,
+        hasApiKey: !!group.apiKeyEncrypted,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/agent-groups/:id', (req: Request, res: Response) => {
+    try {
+      const group = getAgentGroup(req.params.id as string);
+      if (!group) {
+        res.status(404).json({ error: 'Agent group not found' });
+        return;
+      }
+      res.json({
+        ...group,
+        apiKeyEncrypted: undefined,
+        hasApiKey: !!group.apiKeyEncrypted,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.put('/agent-groups/:id', (req: Request, res: Response) => {
+    try {
+      const group = updateAgentGroup(req.params.id as string, req.body);
+      res.json({
+        ...group,
+        apiKeyEncrypted: undefined,
+        hasApiKey: !!group.apiKeyEncrypted,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  });
+
+  router.delete('/agent-groups/:id', (req: Request, res: Response) => {
+    try {
+      deleteAgentGroup(req.params.id as string);
+      res.json({ status: 'deleted' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/agent-groups/:id/assign/:channelId', (req: Request, res: Response) => {
+    try {
+      assignChannelToGroup(req.params.channelId as string, req.params.id as string);
+      res.json({ status: 'assigned' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  });
+
+  router.post('/agent-groups/:id/unassign/:channelId', (req: Request, res: Response) => {
+    try {
+      unassignChannelFromGroup(req.params.channelId as string);
+      res.json({ status: 'unassigned' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/agent-groups/:id/stats', (req: Request, res: Response) => {
+    try {
+      const stats = getAgentGroupStats(req.params.id as string);
+      res.json(stats);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
   });
 
   // ==================== Health ====================

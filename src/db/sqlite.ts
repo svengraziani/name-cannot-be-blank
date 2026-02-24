@@ -237,10 +237,21 @@ export function logApiCall(call: {
   output_tokens: number;
   duration_ms: number;
   isolated: boolean;
+  agent_group_id?: string;
 }): void {
-  getDb().prepare(
-    'INSERT INTO api_calls (conversation_id, model, input_tokens, output_tokens, duration_ms, isolated) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(call.conversation_id || null, call.model, call.input_tokens, call.output_tokens, call.duration_ms, call.isolated ? 1 : 0);
+  // Check if agent_group_id column exists (added by groups schema migration)
+  const columns = getDb().pragma('table_info(api_calls)') as Array<{ name: string }>;
+  const hasGroupColumn = columns.some(c => c.name === 'agent_group_id');
+
+  if (hasGroupColumn && call.agent_group_id) {
+    getDb().prepare(
+      'INSERT INTO api_calls (conversation_id, model, input_tokens, output_tokens, duration_ms, isolated, agent_group_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(call.conversation_id || null, call.model, call.input_tokens, call.output_tokens, call.duration_ms, call.isolated ? 1 : 0, call.agent_group_id);
+  } else {
+    getDb().prepare(
+      'INSERT INTO api_calls (conversation_id, model, input_tokens, output_tokens, duration_ms, isolated) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(call.conversation_id || null, call.model, call.input_tokens, call.output_tokens, call.duration_ms, call.isolated ? 1 : 0);
+  }
 }
 
 export function getUsageSummary(): {

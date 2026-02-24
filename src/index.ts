@@ -3,6 +3,8 @@ import { createServer } from './gateway/server';
 import { initChannels } from './channels/manager';
 import { loadSystemPrompt, initAgentRuntime } from './agent/loop';
 import { registerBuiltinTools } from './agent/tools';
+import { exportBuiltinSkills, loadAndRegisterSkills } from './agent/skills';
+import { initAgentGroupsSchema } from './agent/groups';
 
 async function main() {
   console.log('='.repeat(50));
@@ -21,8 +23,17 @@ async function main() {
   // Register built-in tools (web_browse, run_script, http_request)
   registerBuiltinTools();
 
+  // Export built-in tools as skill manifests to /data/skills/
+  exportBuiltinSkills();
+
+  // Load custom skills from /data/skills/ and register in tool registry
+  loadAndRegisterSkills();
+
   // Initialize agent runtime (checks container availability)
   await initAgentRuntime();
+
+  // Initialize agent groups DB schema (migration-safe)
+  initAgentGroupsSchema();
 
   // Create HTTP/WS server
   const app = createServer();

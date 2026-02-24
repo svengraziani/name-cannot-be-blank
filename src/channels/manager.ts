@@ -13,6 +13,8 @@ import {
   ChannelRow,
 } from '../db/sqlite';
 import { processMessage, agentEvents } from '../agent/loop';
+import { resolveAgentConfig, checkGroupBudget } from '../agent/groups/resolver';
+import { getSystemPrompt } from '../agent/loop';
 import { EventEmitter } from 'events';
 
 export const channelManagerEvents = new EventEmitter();
@@ -104,6 +106,7 @@ export function getChannelStatuses(): Array<{
   enabled: boolean;
   status: string;
   statusInfo: Record<string, unknown>;
+  agentGroupId?: string;
 }> {
   const channels = getAllChannels();
   return channels.map(ch => {
@@ -115,6 +118,7 @@ export function getChannelStatuses(): Array<{
       enabled: ch.enabled === 1,
       status: adapter?.status || ch.status,
       statusInfo: adapter?.getStatusInfo() || {},
+      agentGroupId: (ch as any).agent_group_id || undefined,
     };
   });
 }
@@ -143,7 +147,7 @@ async function startChannel(ch: ChannelRow): Promise<void> {
       throw new Error(`Unknown channel type: ${ch.type}`);
   }
 
-  // Extract enabled tools from channel config
+  // Extract enabled tools from channel config (legacy, overridden by group)
   const enabledTools = conf.tools as string[] | undefined;
   if (enabledTools?.length) {
     console.log(`[manager] Channel ${ch.id} (${ch.type}) tools: ${enabledTools.join(', ')}`);
@@ -163,13 +167,34 @@ async function startChannel(ch: ChannelRow): Promise<void> {
     });
 
     try {
-      const reply = await processMessage(conversationId, msg.text, msg.channelType, msg.sender, enabledTools);
+      // Resolve agent config from group (or use global defaults)
+      const agentConfig = resolveAgentConfig(msg.channelId, getSystemPrompt());
+
+      // Check budget limits if group is assigned
+      if (agentConfig.groupId) {
+        const budgetError = checkGroupBudget(agentConfig.groupId);
+        if (budgetError) {
+          console.warn(`[manager] Budget exceeded for group ${agentConfig.groupId}: ${budgetError}`);
+          await adapter.sendMessage(msg.externalChatId, `Budget limit reached: ${budgetError}`);
+          return;
+        }
+      }
+
+      const reply = await processMessage(
+        conversationId,
+        msg.text,
+        msg.channelType,
+        msg.sender,
+        enabledTools,
+        agentConfig,
+      );
       await adapter.sendMessage(msg.externalChatId, reply);
 
       channelManagerEvents.emit('message:reply', {
         channelId: msg.channelId,
         channelType: msg.channelType,
         replyLength: reply.length,
+        groupId: agentConfig.groupId,
       });
     } catch (err) {
       console.error(`[manager] Failed to process/reply:`, err);

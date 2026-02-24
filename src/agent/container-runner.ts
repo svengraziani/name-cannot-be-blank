@@ -11,6 +11,7 @@
 import { spawn } from 'child_process';
 import { config } from '../config';
 import { EventEmitter } from 'events';
+import { getSkillsDir } from './skills/loader';
 
 const OUTPUT_START = '===AGENT_OUTPUT_START===';
 const OUTPUT_END = '===AGENT_OUTPUT_END===';
@@ -76,18 +77,14 @@ async function executeContainer(input: ContainerInput): Promise<ContainerResult>
       'run',
       '--rm',                              // Auto-remove after exit
       '-i',                                // Interactive (stdin)
-      '--network=none',                    // No network access for isolation
       '--memory=512m',                     // Memory limit
       '--cpus=0.5',                        // CPU limit
       '--read-only',                       // Read-only filesystem
       '--tmpfs=/tmp:rw,noexec,nosuid',     // Writable tmp only
+      '-v', `${getSkillsDir()}:/skills:ro`, // Mount skills directory (read-only)
       '--name', `agent-run-${Date.now()}`,
       AGENT_IMAGE,
     ];
-
-    // Allow network for API calls - override --network=none
-    // The agent needs to reach the Anthropic API
-    args.splice(args.indexOf('--network=none'), 1);
 
     const child = spawn('docker', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
