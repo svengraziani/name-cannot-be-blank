@@ -7,6 +7,7 @@ import { exportBuiltinSkills, loadAndRegisterSkills, startSkillWatcher } from '.
 import { initAgentGroupsSchema } from './agent/groups';
 import { initA2ASchema } from './agent/a2a';
 import { initSchedulerSchema, startScheduler, startCalendarPolling } from './scheduler';
+import { initHitlSchema, expireStaleApprovals } from './agent/hitl';
 
 async function main() {
   console.log('='.repeat(50));
@@ -43,6 +44,9 @@ async function main() {
   // Initialize scheduler DB schema
   initSchedulerSchema();
 
+  // Initialize HITL approval schema
+  initHitlSchema();
+
   // Create HTTP/WS server
   const app = createServer();
 
@@ -57,6 +61,14 @@ async function main() {
 
   // Start skills hot-reload watcher
   startSkillWatcher();
+
+  // Periodic cleanup of stale approval requests (every 60s)
+  setInterval(() => {
+    const expired = expireStaleApprovals();
+    if (expired > 0) {
+      console.log(`[hitl] Expired ${expired} stale approval(s)`);
+    }
+  }, 60_000);
 
   // Start listening
   app.listen(config.port, config.host, () => {

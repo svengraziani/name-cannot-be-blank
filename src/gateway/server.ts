@@ -10,6 +10,7 @@ import { authMiddleware, rateLimitMiddleware } from '../auth/middleware';
 import { a2aEvents } from '../agent/a2a';
 import { schedulerEvents, calendarEvents } from '../scheduler';
 import { skillWatcherEvents } from '../agent/skills';
+import { approvalEvents, notifyApprovalRequired, notifyApprovalResolved } from '../agent/hitl';
 
 export function createServer() {
   const app = express();
@@ -98,6 +99,17 @@ export function createServer() {
 
   // Forward skills watcher events
   skillWatcherEvents.on('skills:reloaded', (data) => broadcast('skills:reloaded', data));
+
+  // Forward HITL approval events
+  approvalEvents.on('approval:required', (data) => {
+    broadcast('approval:required', data);
+    void notifyApprovalRequired(data);
+  });
+  approvalEvents.on('approval:resolved', (data) => {
+    broadcast('approval:resolved', data);
+    void notifyApprovalResolved(data);
+  });
+  approvalEvents.on('approval:timeout', (data) => broadcast('approval:timeout', data));
 
   // Fallback: serve UI for any non-API route
   app.get('*', (_req, res) => {

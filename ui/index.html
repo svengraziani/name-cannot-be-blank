@@ -170,6 +170,7 @@
       <div class="tab" onclick="switchTab('groups')">Agent Groups</div>
       <div class="tab" onclick="switchTab('skills')">Skills</div>
       <div class="tab" onclick="switchTab('scheduler')">Scheduler</div>
+      <div class="tab" onclick="switchTab('approvals')">Approvals</div>
       <div class="tab" onclick="switchTab('usage')">Usage</div>
       <div class="tab" onclick="switchTab('tasks')">Loop Tasks</div>
     </div>
@@ -314,6 +315,40 @@
       </div>
     </div>
 
+    <!-- ===== APPROVALS TAB ===== -->
+    <div class="tab-content" id="tab-approvals">
+      <div class="container">
+        <div class="card full" style="margin-bottom:20px;">
+          <h2>Approval Stats</h2>
+          <div class="stats">
+            <div class="stat"><div class="value" id="approvalPending">0</div><div class="label">Pending</div></div>
+            <div class="stat"><div class="value" id="approvalApproved">0</div><div class="label">Approved</div></div>
+            <div class="stat"><div class="value" id="approvalRejected">0</div><div class="label">Rejected</div></div>
+            <div class="stat"><div class="value" id="approvalTimeout">0</div><div class="label">Timed Out</div></div>
+            <div class="stat"><div class="value" id="approvalAutoApproved">0</div><div class="label">Auto-Approved</div></div>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="card">
+            <h2>Pending Approvals</h2>
+            <div id="pendingApprovalList"><div class="empty-state" style="padding:20px;"><p>No pending approvals</p></div></div>
+          </div>
+          <div class="card">
+            <h2>Approval Rules</h2>
+            <p style="color:var(--text2);font-size:12px;margin-bottom:12px;">Configure which tools require human approval before execution.</p>
+            <div id="approvalRuleList"><div class="empty-state" style="padding:20px;"><p>Loading rules...</p></div></div>
+            <div style="margin-top:12px;">
+              <button class="btn primary sm" onclick="openAddRule()">+ Add Rule</button>
+            </div>
+          </div>
+        </div>
+        <div class="card full" style="margin-top:20px;">
+          <h2>Recent Approval History</h2>
+          <div id="approvalHistory" style="max-height:400px;overflow-y:auto;"><div class="empty-state" style="padding:20px;"><p>No approval history</p></div></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ===== TASKS TAB ===== -->
     <div class="tab-content" id="tab-tasks">
       <div class="container">
@@ -438,6 +473,20 @@
     </div>
   </div>
 
+  <!-- Add Approval Rule Modal -->
+  <div class="modal-overlay hidden" id="addRuleModal">
+    <div class="modal">
+      <h3>Add Approval Rule</h3>
+      <div class="form-group"><label>Tool Name</label><select id="ruleToolName"></select></div>
+      <div class="form-group"><label>Risk Level</label><select id="ruleRiskLevel"><option value="low">Low</option><option value="medium">Medium</option><option value="high" selected>High</option><option value="critical">Critical</option></select></div>
+      <div class="form-group"><label>Require Approval</label><select id="ruleRequire"><option value="true">Yes</option><option value="false">No</option></select></div>
+      <div class="form-group"><label>Auto-Approve</label><select id="ruleAutoApprove"><option value="false">No</option><option value="true">Yes (skip approval)</option></select></div>
+      <div class="form-group"><label>Timeout (seconds)</label><input id="ruleTimeout" type="number" value="300" min="10" max="3600" /></div>
+      <div class="form-group"><label>On Timeout</label><select id="ruleTimeoutAction"><option value="reject">Reject</option><option value="approve">Approve</option></select></div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal('addRuleModal')">Cancel</button><button class="btn primary" onclick="submitRule()">Save Rule</button></div>
+    </div>
+  </div>
+
   <script>
     // === Auth State ===
     let authToken = localStorage.getItem('gateway_token') || '';
@@ -557,6 +606,7 @@
       if (name === 'groups') refreshGroups();
       if (name === 'skills') refreshSkills();
       if (name === 'scheduler') refreshScheduler();
+      if (name === 'approvals') refreshApprovals();
     }
 
     // === WebSocket ===
@@ -594,6 +644,21 @@
         case 'a2a:message': addLog('status', `A2A: ${data.type} from ${data.from} to ${data.to}`); break;
         case 'a2a:agent:spawned': addLog('status', `Sub-agent spawned: ${data.role}`); break;
         case 'skills:reloaded': addLog('status', `Skills reloaded (trigger: ${data.trigger})`); refreshSkills(); break;
+        case 'approval:required':
+          addLog('status', `Approval required: ${data.toolName} (${data.riskLevel})`);
+          refreshPendingApprovals();
+          refreshApprovalStats();
+          break;
+        case 'approval:resolved':
+          addLog(data.status === 'approved' ? 'reply' : 'error', `Tool ${data.toolName} ${data.status}${data.respondedBy ? ' by ' + data.respondedBy : ''}`);
+          refreshPendingApprovals();
+          refreshApprovalStats();
+          break;
+        case 'approval:timeout':
+          addLog('error', `Approval timeout: ${data.toolName} (auto-${data.timeoutAction})`);
+          refreshPendingApprovals();
+          refreshApprovalStats();
+          break;
       }
     }
 
@@ -1085,6 +1150,164 @@
         document.getElementById('schedCronJobs').textContent = stats.cronJobs || 0;
         document.getElementById('schedIntervalJobs').textContent = stats.intervalJobs || 0;
       } catch {}
+    }
+
+    // === Approvals Tab ===
+    let pendingApprovals = [];
+    let approvalRules = [];
+
+    async function refreshApprovals() {
+      await Promise.all([refreshApprovalStats(), refreshPendingApprovals(), refreshApprovalRules(), refreshApprovalHistory()]);
+    }
+
+    async function refreshApprovalStats() {
+      try {
+        const res = await apiFetch('/api/approvals/stats');
+        const stats = await res.json();
+        document.getElementById('approvalPending').textContent = stats.pending || 0;
+        document.getElementById('approvalApproved').textContent = stats.approved || 0;
+        document.getElementById('approvalRejected').textContent = stats.rejected || 0;
+        document.getElementById('approvalTimeout').textContent = stats.timeout || 0;
+        document.getElementById('approvalAutoApproved').textContent = stats.autoApproved || 0;
+      } catch {}
+    }
+
+    async function refreshPendingApprovals() {
+      try {
+        const res = await apiFetch('/api/approvals?status=pending');
+        pendingApprovals = await res.json();
+        renderPendingApprovals();
+      } catch {}
+    }
+
+    function renderPendingApprovals() {
+      const el = document.getElementById('pendingApprovalList');
+      if (!pendingApprovals.length) {
+        el.innerHTML = '<div class="empty-state" style="padding:20px;"><p>No pending approvals</p></div>';
+        return;
+      }
+      el.innerHTML = pendingApprovals.map(a => {
+        const timeLeft = Math.max(0, Math.round((new Date(a.timeoutAt).getTime() - Date.now()) / 1000));
+        const inputStr = JSON.stringify(a.toolInput).slice(0, 200);
+        return `
+          <div class="task-item" style="border-left:3px solid ${riskColor(a.riskLevel)};">
+            <div class="task-header">
+              <div>
+                <span class="task-name">${escHtml(a.toolName)}</span>
+                <span class="task-badge" style="background:${riskColor(a.riskLevel)}20;color:${riskColor(a.riskLevel)};">${a.riskLevel.toUpperCase()}</span>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <button class="btn sm primary" onclick="approveRequest('${a.id}')">Approve</button>
+                <button class="btn sm danger" onclick="rejectRequest('${a.id}')">Reject</button>
+              </div>
+            </div>
+            <div class="task-meta">
+              Run #${a.runId} | Timeout: ${timeLeft}s | ${new Date(a.requestedAt).toLocaleTimeString('de-DE')}
+            </div>
+            <div class="task-output" style="font-size:11px;">${escHtml(inputStr)}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function approveRequest(id) {
+      try {
+        await apiFetch(`/api/approvals/${id}/approve`, { method: 'POST', body: JSON.stringify({}) });
+        refreshApprovals();
+        addLog('reply', `Approved tool call ${id.slice(0,8)}...`);
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function rejectRequest(id) {
+      const reason = prompt('Rejection reason (optional):');
+      try {
+        await apiFetch(`/api/approvals/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason: reason || undefined }) });
+        refreshApprovals();
+        addLog('error', `Rejected tool call ${id.slice(0,8)}...`);
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function refreshApprovalRules() {
+      try {
+        const res = await apiFetch('/api/approval-rules');
+        const data = await res.json();
+        approvalRules = data.rules || [];
+        renderApprovalRules(data.defaults || {});
+      } catch {}
+    }
+
+    function renderApprovalRules(defaults) {
+      const el = document.getElementById('approvalRuleList');
+      if (!approvalRules.length) {
+        const defaultsHtml = Object.entries(defaults).map(([tool, risk]) =>
+          `<div style="font-size:12px;color:var(--text2);padding:4px 0;">${escHtml(tool)}: <span style="color:${riskColor(risk)}">${risk}</span> (default)</div>`
+        ).join('');
+        el.innerHTML = defaultsHtml || '<div class="empty-state" style="padding:10px;"><p>No custom rules. Defaults apply.</p></div>';
+        return;
+      }
+      el.innerHTML = approvalRules.map(r => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--bg3);border-radius:6px;margin-bottom:6px;">
+          <div>
+            <span style="font-weight:500;font-size:13px;">${escHtml(r.toolName)}</span>
+            <span class="task-badge" style="background:${riskColor(r.riskLevel)}20;color:${riskColor(r.riskLevel)};">${r.riskLevel}</span>
+            ${r.requireApproval ? '<span style="font-size:11px;color:var(--yellow);">Requires approval</span>' : '<span style="font-size:11px;color:var(--green);">Auto-pass</span>'}
+            ${r.autoApprove ? '<span style="font-size:11px;color:var(--blue);">Auto-approve</span>' : ''}
+          </div>
+          <button class="btn sm danger" onclick="deleteRule('${escHtml(r.toolName)}')">Remove</button>
+        </div>
+      `).join('');
+    }
+
+    function openAddRule() {
+      const sel = document.getElementById('ruleToolName');
+      sel.innerHTML = '';
+      try {
+        apiFetch('/api/tools').then(r => r.json()).then(tools => {
+          sel.innerHTML = tools.map(t => `<option value="${escHtml(t.name)}">${escHtml(t.name)}</option>`).join('');
+        });
+      } catch {}
+      document.getElementById('addRuleModal').classList.remove('hidden');
+    }
+
+    async function submitRule() {
+      const data = {
+        toolName: document.getElementById('ruleToolName').value,
+        riskLevel: document.getElementById('ruleRiskLevel').value,
+        requireApproval: document.getElementById('ruleRequire').value === 'true',
+        autoApprove: document.getElementById('ruleAutoApprove').value === 'true',
+        timeoutSeconds: parseInt(document.getElementById('ruleTimeout').value) || 300,
+        timeoutAction: document.getElementById('ruleTimeoutAction').value,
+      };
+      if (!data.toolName) { alert('Select a tool'); return; }
+      try {
+        await apiFetch('/api/approval-rules', { method: 'POST', body: JSON.stringify(data) });
+        closeModal('addRuleModal');
+        refreshApprovalRules();
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function deleteRule(toolName) {
+      if (!confirm(`Remove approval rule for "${toolName}"?`)) return;
+      await apiFetch(`/api/approval-rules/${toolName}`, { method: 'DELETE' });
+      refreshApprovalRules();
+    }
+
+    async function refreshApprovalHistory() {
+      try {
+        const res = await apiFetch('/api/approvals?limit=30');
+        const approvals = await res.json();
+        const el = document.getElementById('approvalHistory');
+        if (!approvals.length) { el.innerHTML = '<div class="empty-state" style="padding:20px;"><p>No approval history</p></div>'; return; }
+        el.innerHTML = `<table class="usage-table"><thead><tr><th>Time</th><th>Tool</th><th>Risk</th><th>Status</th><th>By</th><th>Reason</th></tr></thead><tbody>${approvals.map(a => `<tr><td style="font-size:12px;">${new Date(a.requestedAt).toLocaleString('de-DE')}</td><td><code>${escHtml(a.toolName)}</code></td><td><span style="color:${riskColor(a.riskLevel)}">${a.riskLevel}</span></td><td><span style="color:${statusColor(a.status)}">${a.status}</span></td><td>${escHtml(a.respondedBy || '-')}</td><td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">${escHtml(a.reason || '-')}</td></tr>`).join('')}</tbody></table>`;
+      } catch {}
+    }
+
+    function riskColor(level) {
+      return { low: 'var(--green)', medium: 'var(--yellow)', high: 'var(--orange)', critical: 'var(--red)' }[level] || 'var(--text2)';
+    }
+
+    function statusColor(status) {
+      return { pending: 'var(--yellow)', approved: 'var(--green)', rejected: 'var(--red)', timeout: 'var(--orange)', auto_approved: 'var(--blue)' }[status] || 'var(--text2)';
     }
 
     // === Util ===

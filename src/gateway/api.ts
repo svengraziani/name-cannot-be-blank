@@ -33,6 +33,19 @@ import {
   PREDEFINED_ROLES,
 } from '../agent/a2a';
 import {
+  getPendingApprovals,
+  getRecentApprovals,
+  getApprovalRequest,
+  getApprovalStats,
+  getApprovalsByRun,
+  respondToApproval,
+  getAllApprovalRules,
+  upsertApprovalRule,
+  deleteApprovalRule,
+  getPendingCount,
+  DEFAULT_TOOL_RISK,
+} from '../agent/hitl';
+import {
   createJob,
   getAllJobs,
   getJob,
@@ -683,6 +696,138 @@ export function createApiRouter(): Router {
     try {
       stopCalendarPoll(req.params.id as string);
       deleteCalendarSource(req.params.id as string);
+      res.json({ status: 'deleted' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== HITL Approvals ====================
+
+  router.get('/approvals', (req: Request, res: Response) => {
+    try {
+      const status = req.query.status as string;
+      if (status === 'pending') {
+        res.json(getPendingApprovals());
+      } else {
+        const limit = parseInt(req.query.limit as string) || 50;
+        res.json(getRecentApprovals(limit));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/approvals/stats', (_req: Request, res: Response) => {
+    try {
+      const stats = getApprovalStats();
+      res.json({ ...stats, pendingInMemory: getPendingCount() });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/approvals/:id', (req: Request, res: Response) => {
+    try {
+      const approval = getApprovalRequest(req.params.id as string);
+      if (!approval) {
+        res.status(404).json({ error: 'Approval request not found' });
+        return;
+      }
+      res.json(approval);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/approvals/run/:runId', (req: Request, res: Response) => {
+    try {
+      const runId = parseInt(req.params.runId as string);
+      res.json(getApprovalsByRun(runId));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/approvals/:id/approve', (req: Request, res: Response) => {
+    try {
+      const { reason } = req.body || {};
+      const respondedBy = (req as any).sessionUser?.username || 'admin';
+      const ok = respondToApproval(req.params.id as string, true, reason, respondedBy);
+      if (!ok) {
+        res.status(404).json({ error: 'Approval not found or already resolved' });
+        return;
+      }
+      res.json({ status: 'approved', id: req.params.id });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/approvals/:id/reject', (req: Request, res: Response) => {
+    try {
+      const { reason } = req.body || {};
+      const respondedBy = (req as any).sessionUser?.username || 'admin';
+      const ok = respondToApproval(req.params.id as string, false, reason, respondedBy);
+      if (!ok) {
+        res.status(404).json({ error: 'Approval not found or already resolved' });
+        return;
+      }
+      res.json({ status: 'rejected', id: req.params.id });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // --- Approval Rules ---
+
+  router.get('/approval-rules', (_req: Request, res: Response) => {
+    try {
+      const rules = getAllApprovalRules();
+      res.json({ rules, defaults: DEFAULT_TOOL_RISK });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/approval-rules', (req: Request, res: Response) => {
+    try {
+      const { toolName, riskLevel, autoApprove, requireApproval, timeoutSeconds, timeoutAction, enabled } = req.body;
+      if (!toolName) {
+        res.status(400).json({ error: 'toolName is required' });
+        return;
+      }
+      const rule = upsertApprovalRule({
+        toolName,
+        riskLevel,
+        autoApprove,
+        requireApproval,
+        timeoutSeconds,
+        timeoutAction,
+        enabled,
+      });
+      res.json(rule);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.delete('/approval-rules/:toolName', (req: Request, res: Response) => {
+    try {
+      const deleted = deleteApprovalRule(req.params.toolName as string);
+      if (!deleted) {
+        res.status(404).json({ error: 'Rule not found' });
+        return;
+      }
       res.json({ status: 'deleted' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

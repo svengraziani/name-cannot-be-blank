@@ -7,6 +7,7 @@ import { toolRegistry } from './tools';
 import { EventEmitter } from 'events';
 import { ResolvedAgentConfig } from './groups/resolver';
 import { setA2AContext } from './a2a';
+import { checkApprovalRequired, requestApproval } from './hitl';
 
 export const agentEvents = new EventEmitter();
 
@@ -140,6 +141,8 @@ export async function processMessage(
         messages,
         effectiveTools,
         runId,
+        conversationId,
+        agentConfig?.groupId,
         effectiveSystemPrompt,
         effectiveModel,
         effectiveMaxTokens,
@@ -200,6 +203,8 @@ async function callAgentDirect(
   messages: Anthropic.MessageParam[],
   enabledTools?: string[],
   runId?: number,
+  conversationId?: string,
+  groupId?: string,
   overrideSystemPrompt?: string,
   overrideModel?: string,
   overrideMaxTokens?: number,
@@ -258,6 +263,51 @@ async function callAgentDirect(
           tool: block.name,
           input: toolInput,
         });
+
+        // --- HITL Approval Gate ---
+        const approvalCheck = checkApprovalRequired(block.name);
+        if (approvalCheck.required && runId) {
+          console.log(`[agent] Approval required for ${block.name} (risk: ${approvalCheck.riskLevel})`);
+          agentEvents.emit('tool:approval_required', {
+            runId,
+            iteration,
+            tool: block.name,
+            input: toolInput,
+            riskLevel: approvalCheck.riskLevel,
+          });
+
+          const approvalResult = await requestApproval({
+            runId,
+            conversationId: conversationId || '',
+            groupId,
+            toolName: block.name,
+            toolInput,
+            riskLevel: approvalCheck.riskLevel,
+            timeoutSeconds: approvalCheck.timeoutSeconds,
+            timeoutAction: approvalCheck.timeoutAction,
+          });
+
+          if (!approvalResult.approved) {
+            console.log(`[agent] Tool ${block.name} rejected: ${approvalResult.reason || 'no reason'}`);
+            agentEvents.emit('tool:approval_rejected', {
+              runId,
+              iteration,
+              tool: block.name,
+              reason: approvalResult.reason,
+            });
+
+            toolResultBlocks.push({
+              type: 'tool_result',
+              tool_use_id: block.id,
+              content: `Tool call rejected by human reviewer: ${approvalResult.reason || 'Not approved'}. Please adjust your approach or ask the user for guidance.`,
+              is_error: true,
+            });
+            continue;
+          }
+
+          console.log(`[agent] Tool ${block.name} approved by ${approvalResult.respondedBy || 'reviewer'}`);
+        }
+        // --- End HITL Approval Gate ---
 
         const result = await toolRegistry.execute(block.name, toolInput);
 
