@@ -58,14 +58,13 @@ export class WhatsAppAdapter extends ChannelAdapter {
       }
 
       // Dynamic import of baileys
-      const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = await import('baileys');
+      const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = await import('baileys');
 
       const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
 
       this.sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true,
-        browser: ['Loop Gateway', 'Chrome', '22.0'],
+        browser: Browsers.ubuntu('Chrome'),
         connectTimeoutMs: 20000,
         qrTimeout: 40000,
       });
