@@ -123,6 +123,20 @@ export class WhatsAppAdapter extends ChannelAdapter {
             return;
           }
 
+          // 405 = WhatsApp rejected stored credentials (stale/corrupt auth state)
+          // Clear auth immediately so next attempt gets a fresh QR code
+          if (statusCode === 405) {
+            console.log(`[whatsapp:${this.channelId}] 405 rejection - clearing corrupt auth state for fresh QR`);
+            this.clearAuthState();
+            this.reconnectAttempts++;
+            if (this.reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+              this.setStatus('error', 'WhatsApp rejected credentials repeatedly. Delete and recreate the channel.');
+              return;
+            }
+            this.scheduleReconnect(2000);
+            return;
+          }
+
           // For other errors: reconnect with backoff
           this.reconnectAttempts++;
 
