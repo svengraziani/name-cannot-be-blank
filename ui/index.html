@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Loop Gateway</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --bg2: #1a1d27;
+      --bg3: #242736;
+      --border: #2e3245;
+      --text: #e4e6f0;
+      --text2: #8b8fa3;
+      --accent: #6c63ff;
+      --accent2: #8b83ff;
+      --green: #4ade80;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --blue: #60a5fa;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    header h1 span { color: var(--accent); }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .status-dot.connected { background: var(--green); }
+    .status-dot.disconnected { background: var(--text2); }
+    .status-dot.connecting { background: var(--yellow); animation: pulse 1.5s infinite; }
+    .status-dot.error { background: var(--red); }
+
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .card h2 {
+      font-size: 15px;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+    }
+
+    .card.full { grid-column: 1 / -1; }
+
+    /* Channel Cards */
+    .channel-list { display: flex; flex-direction: column; gap: 12px; }
+
+    .channel-item {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .channel-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .channel-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .channel-icon.telegram { background: #229ed920; color: #229ed9; }
+    .channel-icon.whatsapp { background: #25d36620; color: #25d366; }
+    .channel-icon.email { background: #ea433520; color: #ea4335; }
+
+    .channel-name { font-weight: 500; font-size: 14px; }
+    .channel-status { font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 6px; }
+
+    .channel-actions { display: flex; gap: 8px; }
+
+    /* Buttons */
+    .btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+
+    .btn:hover { border-color: var(--accent); background: var(--accent)20; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { background: var(--accent2); }
+    .btn.danger { color: var(--red); }
+    .btn.danger:hover { background: var(--red)20; border-color: var(--red); }
+    .btn.sm { padding: 5px 10px; font-size: 12px; }
+
+    /* Event Log */
+    .event-log {
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: 'SF Mono', 'Cascadia Code', monospace;
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    .event-log .entry {
+      padding: 2px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+    }
+
+    .event-log .time { color: var(--text2); flex-shrink: 0; }
+    .event-log .tag {
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    .tag.incoming { background: var(--blue)30; color: var(--blue); }
+    .tag.reply { background: var(--green)30; color: var(--green); }
+    .tag.error { background: var(--red)30; color: var(--red); }
+    .tag.status { background: var(--yellow)30; color: var(--yellow); }
+
+    .event-log .msg { color: var(--text); word-break: break-word; }
+
+    /* Stats */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .stat {
+      text-align: center;
+      padding: 12px;
+      background: var(--bg3);
+      border-radius: 8px;
+    }
+
+    .stat .value { font-size: 28px; font-weight: 700; color: var(--accent); }
+    .stat .label { font-size: 12px; color: var(--text2); margin-top: 4px; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .modal-overlay.hidden { display: none; }
+
+    .modal {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      width: 90%;
+      max-width: 480px;
+    }
+
+    .modal h3 {
+      font-size: 18px;
+      margin-bottom: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      color: var(--text2);
+      margin-bottom: 6px;
+    }
+
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+
+    .form-group input:focus, .form-group select:focus {
+      border-color: var(--accent);
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    /* QR Code */
+    .qr-container {
+      background: white;
+      padding: 16px;
+      border-radius: 12px;
+      display: inline-block;
+      margin: 12px 0;
+    }
+
+    .qr-container canvas { display: block; }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text2);
+    }
+
+    .empty-state p { margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span>&#9679;</span> Loop Gateway</h1>
+    <div>
+      <span class="status-dot" id="wsStatus"></span>
+      <span id="wsLabel" style="font-size:12px;color:var(--text2);margin-left:4px;">Connecting...</span>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Stats -->
+    <div class="card full" style="margin-bottom:20px;">
+      <div class="stats">
+        <div class="stat">
+          <div class="value" id="statChannels">0</div>
+          <div class="label">Active Channels</div>
+        </div>
+        <div class="stat">
+          <div class="value" id="statMessages">0</div>
+          <div class="label">Messages Today</div>
+        </div>
+        <div class="stat">
+          <div class="value" id="statTokens">0</div>
+          <div class="label">Tokens Used</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- Channels -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h2 style="margin:0;">Channels</h2>
+          <button class="btn primary sm" onclick="openAddChannel()">+ Add Channel</button>
+        </div>
+        <div class="channel-list" id="channelList">
+          <div class="empty-state">
+            <p>No channels configured yet.</p>
+            <button class="btn primary" onclick="openAddChannel()">Add your first channel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Event Log -->
+      <div class="card">
+        <h2>Live Activity</h2>
+        <div class="event-log" id="eventLog">
+          <div class="empty-state" style="padding:20px;">
+            <p>Waiting for events...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WhatsApp QR (hidden by default) -->
+    <div class="card full" id="qrSection" style="display:none;">
+      <h2>WhatsApp - Scan QR Code</h2>
+      <p style="color:var(--text2);margin-bottom:12px;">Scan this QR code with WhatsApp to connect:</p>
+      <div class="qr-container" id="qrCanvas"></div>
+    </div>
+  </div>
+
+  <!-- Add Channel Modal -->
+  <div class="modal-overlay hidden" id="addChannelModal">
+    <div class="modal">
+      <h3>Add Channel</h3>
+      <div class="form-group">
+        <label>Channel Type</label>
+        <select id="chType" onchange="updateChannelForm()">
+          <option value="telegram">Telegram</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="email">Email</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Name</label>
+        <input id="chName" placeholder="e.g. My Telegram Bot" />
+      </div>
+
+      <!-- Telegram fields -->
+      <div id="telegramFields">
+        <div class="form-group">
+          <label>Bot Token (from @BotFather)</label>
+          <input id="chTgToken" placeholder="123456789:ABCdef..." />
+        </div>
+        <div class="form-group">
+          <label>Allowed User IDs (comma-separated, empty = all)</label>
+          <input id="chTgUsers" placeholder="123456,789012" />
+        </div>
+      </div>
+
+      <!-- WhatsApp fields -->
+      <div id="whatsappFields" style="display:none;">
+        <p style="color:var(--text2);font-size:13px;">WhatsApp will show a QR code after creation. Scan it with your phone to connect.</p>
+      </div>
+
+      <!-- Email fields -->
+      <div id="emailFields" style="display:none;">
+        <div class="form-group">
+          <label>IMAP Host</label>
+          <input id="chEmailImapHost" placeholder="imap.gmail.com" />
+        </div>
+        <div class="form-group">
+          <label>IMAP Port</label>
+          <input id="chEmailImapPort" value="993" type="number" />
+        </div>
+        <div class="form-group">
+          <label>Email User</label>
+          <input id="chEmailUser" placeholder="you@example.com" />
+        </div>
+        <div class="form-group">
+          <label>Email Password</label>
+          <input id="chEmailPass" type="password" placeholder="App password" />
+        </div>
+        <div class="form-group">
+          <label>SMTP Host</label>
+          <input id="chEmailSmtpHost" placeholder="smtp.gmail.com" />
+        </div>
+        <div class="form-group">
+          <label>SMTP Port</label>
+          <input id="chEmailSmtpPort" value="587" type="number" />
+        </div>
+        <div class="form-group">
+          <label>Allowed Senders (comma-separated, empty = all)</label>
+          <input id="chEmailSenders" placeholder="trusted@example.com" />
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn primary" onclick="submitChannel()">Create Channel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- State ---
+    let channels = [];
+    let totalMessages = 0;
+    let totalTokens = 0;
+    let ws;
+
+    // --- WebSocket ---
+    function connectWs() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+      ws.onopen = () => {
+        document.getElementById('wsStatus').className = 'status-dot connected';
+        document.getElementById('wsLabel').textContent = 'Connected';
+      };
+
+      ws.onclose = () => {
+        document.getElementById('wsStatus').className = 'status-dot disconnected';
+        document.getElementById('wsLabel').textContent = 'Disconnected';
+        setTimeout(connectWs, 3000);
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const { event, data } = JSON.parse(e.data);
+          handleEvent(event, data);
+        } catch {}
+      };
+    }
+
+    function handleEvent(event, data) {
+      switch (event) {
+        case 'channel:status':
+          refreshChannels();
+          addLog('status', `Channel ${data.channelId.slice(0,8)}... → ${data.status}`);
+          break;
+        case 'message:incoming':
+          totalMessages++;
+          updateStats();
+          addLog('incoming', `[${data.channelType}] ${data.sender}: ${data.text}`);
+          break;
+        case 'message:reply':
+          addLog('reply', `[${data.channelType}] Reply sent (${data.replyLength} chars)`);
+          break;
+        case 'run:complete':
+          totalTokens += (data.inputTokens || 0) + (data.outputTokens || 0);
+          updateStats();
+          addLog('reply', `Agent run complete (${data.inputTokens}+${data.outputTokens} tokens)`);
+          break;
+        case 'run:error':
+          addLog('error', `Agent error: ${data.error}`);
+          break;
+        case 'whatsapp:qr':
+          showQr(data.qr);
+          break;
+      }
+    }
+
+    // --- Event Log ---
+    function addLog(type, msg) {
+      const log = document.getElementById('eventLog');
+      // Remove empty state
+      const empty = log.querySelector('.empty-state');
+      if (empty) empty.remove();
+
+      const entry = document.createElement('div');
+      entry.className = 'entry';
+      const time = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      entry.innerHTML = `
+        <span class="time">${time}</span>
+        <span class="tag ${type}">${type}</span>
+        <span class="msg">${escHtml(msg)}</span>
+      `;
+      log.appendChild(entry);
+      log.scrollTop = log.scrollHeight;
+
+      // Keep max 100 entries
+      while (log.children.length > 100) log.removeChild(log.firstChild);
+    }
+
+    // --- Channels ---
+    async function refreshChannels() {
+      try {
+        const res = await fetch('/api/channels');
+        channels = await res.json();
+        renderChannels();
+        updateStats();
+      } catch {}
+    }
+
+    function renderChannels() {
+      const list = document.getElementById('channelList');
+      if (channels.length === 0) {
+        list.innerHTML = `<div class="empty-state"><p>No channels configured yet.</p><button class="btn primary" onclick="openAddChannel()">Add your first channel</button></div>`;
+        return;
+      }
+
+      list.innerHTML = channels.map(ch => `
+        <div class="channel-item">
+          <div class="channel-info">
+            <div class="channel-icon ${ch.type}">${channelIcon(ch.type)}</div>
+            <div>
+              <div class="channel-name">${escHtml(ch.name)}</div>
+              <div class="channel-status">
+                <span class="status-dot ${ch.status}"></span>
+                ${ch.status}
+              </div>
+            </div>
+          </div>
+          <div class="channel-actions">
+            <button class="btn sm ${ch.enabled ? 'danger' : ''}" onclick="toggleChannel('${ch.id}', ${!ch.enabled})">
+              ${ch.enabled ? 'Disable' : 'Enable'}
+            </button>
+            <button class="btn sm danger" onclick="deleteChannel('${ch.id}')">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function channelIcon(type) {
+      switch(type) {
+        case 'telegram': return '&#9992;';
+        case 'whatsapp': return '&#9742;';
+        case 'email': return '&#9993;';
+        default: return '&#9672;';
+      }
+    }
+
+    function updateStats() {
+      document.getElementById('statChannels').textContent = channels.filter(c => c.status === 'connected').length;
+      document.getElementById('statMessages').textContent = totalMessages;
+      document.getElementById('statTokens').textContent = totalTokens > 1000 ? (totalTokens / 1000).toFixed(1) + 'k' : totalTokens;
+    }
+
+    async function toggleChannel(id, enabled) {
+      await fetch(`/api/channels/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      refreshChannels();
+    }
+
+    async function deleteChannel(id) {
+      if (!confirm('Delete this channel?')) return;
+      await fetch(`/api/channels/${id}`, { method: 'DELETE' });
+      refreshChannels();
+    }
+
+    // --- Modal ---
+    function openAddChannel() {
+      document.getElementById('addChannelModal').classList.remove('hidden');
+      updateChannelForm();
+    }
+
+    function closeModal() {
+      document.getElementById('addChannelModal').classList.add('hidden');
+    }
+
+    function updateChannelForm() {
+      const type = document.getElementById('chType').value;
+      document.getElementById('telegramFields').style.display = type === 'telegram' ? 'block' : 'none';
+      document.getElementById('whatsappFields').style.display = type === 'whatsapp' ? 'block' : 'none';
+      document.getElementById('emailFields').style.display = type === 'email' ? 'block' : 'none';
+    }
+
+    async function submitChannel() {
+      const type = document.getElementById('chType').value;
+      const name = document.getElementById('chName').value || `${type} channel`;
+      let config = {};
+
+      switch(type) {
+        case 'telegram':
+          config = {
+            botToken: document.getElementById('chTgToken').value,
+            allowedUsers: document.getElementById('chTgUsers').value.split(',').map(s => s.trim()).filter(Boolean),
+          };
+          break;
+        case 'whatsapp':
+          config = {};
+          break;
+        case 'email':
+          config = {
+            imapHost: document.getElementById('chEmailImapHost').value,
+            imapPort: parseInt(document.getElementById('chEmailImapPort').value) || 993,
+            imapUser: document.getElementById('chEmailUser').value,
+            imapPass: document.getElementById('chEmailPass').value,
+            smtpHost: document.getElementById('chEmailSmtpHost').value,
+            smtpPort: parseInt(document.getElementById('chEmailSmtpPort').value) || 587,
+            smtpUser: document.getElementById('chEmailUser').value,
+            smtpPass: document.getElementById('chEmailPass').value,
+            pollIntervalMs: 30000,
+            allowedSenders: document.getElementById('chEmailSenders').value.split(',').map(s => s.trim()).filter(Boolean),
+          };
+          break;
+      }
+
+      try {
+        await fetch('/api/channels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, name, config }),
+        });
+        closeModal();
+        refreshChannels();
+      } catch (err) {
+        alert('Error creating channel: ' + err.message);
+      }
+    }
+
+    // --- WhatsApp QR ---
+    function showQr(qrData) {
+      const section = document.getElementById('qrSection');
+      section.style.display = 'block';
+      const container = document.getElementById('qrCanvas');
+      // Simple text QR display
+      container.innerHTML = `<pre style="font-size:6px;line-height:6px;color:#000;font-family:monospace;">${escHtml(qrData)}</pre>`;
+    }
+
+    // --- Util ---
+    function escHtml(str) {
+      const d = document.createElement('div');
+      d.textContent = str;
+      return d.innerHTML;
+    }
+
+    // --- Init ---
+    connectWs();
+    refreshChannels();
+  </script>
+</body>
+</html>

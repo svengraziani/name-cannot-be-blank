@@ -1,0 +1,210 @@
+import { v4 as uuid } from 'uuid';
+import { ChannelAdapter, IncomingMessage } from './base';
+import { TelegramAdapter, TelegramConfig } from './telegram';
+import { WhatsAppAdapter } from './whatsapp';
+import { EmailAdapter, EmailConfig } from './email';
+import {
+  getAllChannels,
+  upsertChannel,
+  updateChannelStatus,
+  deleteChannel as dbDeleteChannel,
+  getOrCreateConversation,
+  ChannelRow,
+} from '../db/sqlite';
+import { processMessage, agentEvents } from '../agent/loop';
+import { EventEmitter } from 'events';
+
+export const channelManagerEvents = new EventEmitter();
+
+// Active channel adapters
+const adapters = new Map<string, ChannelAdapter>();
+
+/**
+ * Initialize channels from database on startup.
+ */
+export async function initChannels(): Promise<void> {
+  const channels = getAllChannels();
+  for (const ch of channels) {
+    if (ch.enabled) {
+      try {
+        await startChannel(ch);
+      } catch (err) {
+        console.error(`[manager] Failed to start channel ${ch.id} (${ch.type}):`, err);
+      }
+    }
+  }
+  console.log(`[manager] ${adapters.size} channel(s) active`);
+}
+
+/**
+ * Create and start a new channel.
+ */
+export async function createChannel(
+  type: string,
+  name: string,
+  channelConfig: Record<string, unknown>,
+): Promise<string> {
+  const id = uuid();
+  upsertChannel({
+    id,
+    type,
+    name,
+    config: JSON.stringify(channelConfig),
+    enabled: 1,
+  });
+
+  const row = { id, type, name, config: JSON.stringify(channelConfig), enabled: 1, status: 'disconnected', created_at: '', updated_at: '' };
+  await startChannel(row);
+  return id;
+}
+
+/**
+ * Update an existing channel's config and restart it.
+ */
+export async function updateChannel(
+  id: string,
+  updates: { name?: string; config?: Record<string, unknown>; enabled?: boolean },
+): Promise<void> {
+  const existing = getAllChannels().find(c => c.id === id);
+  if (!existing) throw new Error(`Channel ${id} not found`);
+
+  // Stop the existing adapter
+  await stopChannel(id);
+
+  upsertChannel({
+    id,
+    type: existing.type,
+    name: updates.name ?? existing.name,
+    config: updates.config ? JSON.stringify(updates.config) : existing.config,
+    enabled: updates.enabled !== undefined ? (updates.enabled ? 1 : 0) : existing.enabled,
+  });
+
+  if (updates.enabled !== false) {
+    const row = getAllChannels().find(c => c.id === id)!;
+    await startChannel(row);
+  }
+}
+
+/**
+ * Delete a channel completely.
+ */
+export async function removeChannel(id: string): Promise<void> {
+  await stopChannel(id);
+  dbDeleteChannel(id);
+}
+
+/**
+ * Get status of all channels.
+ */
+export function getChannelStatuses(): Array<{
+  id: string;
+  type: string;
+  name: string;
+  enabled: boolean;
+  status: string;
+  statusInfo: Record<string, unknown>;
+}> {
+  const channels = getAllChannels();
+  return channels.map(ch => {
+    const adapter = adapters.get(ch.id);
+    return {
+      id: ch.id,
+      type: ch.type,
+      name: ch.name,
+      enabled: ch.enabled === 1,
+      status: adapter?.status || ch.status,
+      statusInfo: adapter?.getStatusInfo() || {},
+    };
+  });
+}
+
+// --- Internal helpers ---
+
+async function startChannel(ch: ChannelRow): Promise<void> {
+  if (adapters.has(ch.id)) {
+    await stopChannel(ch.id);
+  }
+
+  const conf = JSON.parse(ch.config);
+  let adapter: ChannelAdapter;
+
+  switch (ch.type) {
+    case 'telegram':
+      adapter = new TelegramAdapter(ch.id, conf as TelegramConfig);
+      break;
+    case 'whatsapp':
+      adapter = new WhatsAppAdapter(ch.id);
+      break;
+    case 'email':
+      adapter = new EmailAdapter(ch.id, conf as EmailConfig);
+      break;
+    default:
+      throw new Error(`Unknown channel type: ${ch.type}`);
+  }
+
+  // Wire up incoming messages to the agent loop
+  adapter.on('message', async (msg: IncomingMessage) => {
+    console.log(`[manager] Message from ${msg.channelType}/${msg.sender}: ${msg.text.slice(0, 100)}`);
+
+    const conversationId = getOrCreateConversation(msg.channelId, msg.externalChatId, msg.chatTitle);
+
+    channelManagerEvents.emit('message:incoming', {
+      channelId: msg.channelId,
+      channelType: msg.channelType,
+      sender: msg.sender,
+      text: msg.text.slice(0, 200),
+    });
+
+    try {
+      const reply = await processMessage(conversationId, msg.text, msg.channelType, msg.sender);
+      await adapter.sendMessage(msg.externalChatId, reply);
+
+      channelManagerEvents.emit('message:reply', {
+        channelId: msg.channelId,
+        channelType: msg.channelType,
+        replyLength: reply.length,
+      });
+    } catch (err) {
+      console.error(`[manager] Failed to process/reply:`, err);
+      try {
+        await adapter.sendMessage(
+          msg.externalChatId,
+          'Sorry, an error occurred while processing your message. Please try again.',
+        );
+      } catch {
+        // ignore send failure
+      }
+    }
+  });
+
+  // Forward status changes
+  adapter.on('status', (statusUpdate: { channelId: string; status: string; error?: string }) => {
+    updateChannelStatus(statusUpdate.channelId, statusUpdate.status);
+    channelManagerEvents.emit('channel:status', statusUpdate);
+  });
+
+  // Forward WhatsApp QR codes
+  adapter.on('qr', (qr: string) => {
+    channelManagerEvents.emit('whatsapp:qr', { channelId: ch.id, qr });
+  });
+
+  adapters.set(ch.id, adapter);
+
+  try {
+    await adapter.connect();
+  } catch (err) {
+    console.error(`[manager] Channel ${ch.id} connect failed:`, err);
+  }
+}
+
+async function stopChannel(id: string): Promise<void> {
+  const adapter = adapters.get(id);
+  if (adapter) {
+    try {
+      await adapter.disconnect();
+    } catch (err) {
+      console.error(`[manager] Channel ${id} disconnect error:`, err);
+    }
+    adapters.delete(id);
+  }
+}
