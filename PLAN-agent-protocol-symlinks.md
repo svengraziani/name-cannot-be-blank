@@ -332,8 +332,19 @@ interface AgentGroup {
   name: string;                        // z.B. "Support Team", "Dev Team", "Research Squad"
   description: string;
   systemPrompt: string;                // Gruppen-übergreifender System-Prompt
-  model: string;                       // Claude-Modell für diese Gruppe
+
+  // AI Einstellungen (pro Gruppe im UI konfigurierbar)
+  apiKey?: string;                     // Eigener API Key (verschlüsselt in DB)
+                                       // Fallback: globaler ANTHROPIC_API_KEY aus .env
+  model: string;                       // Pro Gruppe wählbar (Dropdown im UI)
   maxTokens: number;
+
+  // Budget (pro Gruppe im UI einstellbar, 0 = unbegrenzt)
+  budgetConfig: {
+    maxTokensPerDay: number;
+    maxTokensPerMonth: number;
+    alertThreshold: number;            // Warnung bei X% (z.B. 80)
+  };
 
   // Welche Skills diese Gruppe nutzen darf
   skills: string[];                    // z.B. ["web_browse", "http_request"]
@@ -398,12 +409,16 @@ CREATE TABLE IF NOT EXISTS agent_groups (
   name TEXT NOT NULL,
   description TEXT DEFAULT '',
   system_prompt TEXT NOT NULL,
+  api_key_encrypted TEXT,                       -- AES-256 verschlüsselt, NULL = globaler Key
   model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
   max_tokens INTEGER NOT NULL DEFAULT 8192,
   skills TEXT NOT NULL DEFAULT '[]',           -- JSON array of skill names
   roles TEXT NOT NULL DEFAULT '[]',            -- JSON array of AgentGroupRole
   container_mode INTEGER NOT NULL DEFAULT 0,
   max_concurrent_agents INTEGER NOT NULL DEFAULT 3,
+  budget_max_tokens_day INTEGER NOT NULL DEFAULT 0,    -- 0 = unbegrenzt
+  budget_max_tokens_month INTEGER NOT NULL DEFAULT 0,  -- 0 = unbegrenzt
+  budget_alert_threshold INTEGER NOT NULL DEFAULT 80,  -- Warnung bei X%
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -859,13 +874,177 @@ Calendar Source: "Sven's Kalender"
 - Phase 9-11, 14-16: UI, Container-Support, Hot-Reload
 - Damit funktioniert: Vollständige Sichtbarkeit und Verwaltung
 
-## Offene Fragen
+## Entschiedene Designfragen
 
-1. **Container-Networking für A2A**: Sollen Agent-Container untereinander kommunizieren können (Docker Network), oder läuft alles über den Gateway als Hub?
-2. **Skill-Sicherheit**: Sollen hochgeladene Skills sandboxed ausgeführt werden (z.B. via `vm2` oder isolate)?
-3. **Persistenz**: Soll der A2A Message-Bus nur in-memory sein oder alles in SQLite persistiert werden?
-4. **Skalierung**: Reicht ein Single-Node Setup oder soll A2A auch über Redis/NATS verteilt werden können?
-5. **Kalender-Schreibzugriff**: Sollen Agents auch Kalender-Events erstellen/ändern können (CalDAV), oder nur lesen (iCal)?
-6. **Scheduler-Timezone**: Welche Timezone für Cron-Jobs? UTC oder konfigurierbar pro Job?
-7. **Agent-Gruppen Limits**: Soll es ein Limit für Token-Verbrauch pro Agent-Gruppe geben (Budget-Management)?
-8. **Kalender-Auth**: Wie authentifizieren wir uns bei privaten Kalendern (OAuth2 für Google Calendar vs. einfache iCal URL)?
+| # | Frage | Entscheidung | Auswirkung |
+|---|-------|-------------|------------|
+| 1 | **Container-Networking für A2A** | **Gateway als Hub** - alle A2A Messages laufen über den Gateway, keine direkte Container-zu-Container Kommunikation | Einfacher zu debuggen, bessere Sicherheit, automatisches Logging in SQLite, kein Docker-Network-Setup nötig |
+| 2 | **Skill-Sicherheit** | **Ja, Sandbox** - benutzerdefinierte Skills laufen sandboxed | `isolated-vm` oder `vm2` für Handler-Ausführung, Built-in Skills dürfen nativ laufen |
+| 3 | **A2A Persistenz** | **SQLite** - alle A2A Messages werden persistiert | `a2a_messages` Tabelle, vollständiger Audit-Trail, Dashboard kann historische Flows anzeigen |
+| 4 | **Skalierung** | **Single-Node** (vorerst) | EventEmitter-basierter Message Bus reicht, spätere Migration zu Redis/NATS als Option offen halten |
+| 5 | **Kalender-Zugriff** | **Lesen + Schreiben** | Phase 1: iCal-URL (Lesen), Phase 2: CalDAV/Google Calendar API (Lesen + Schreiben) |
+| 6 | **Scheduler-Timezone** | **Benutzerfreundlich, kein Cron-Syntax** | Visueller Scheduler-Builder im UI (siehe unten) |
+| 7 | **Agent-Gruppen Limits** | **Optional, über UI einstellbar** | Budget-Limit pro Gruppe (Tokens/Tag), kann auf 0 = unbegrenzt gesetzt werden |
+| 8 | **Kalender-Auth** | **Beides** | iCal-URL als einfacher Einstieg (alle Kalender-Apps exportieren das), OAuth2 für Google Calendar API als Upgrade für Schreibzugriff |
+
+---
+
+## Zusätzliche Designentscheidungen
+
+### API Key & Model pro Agent-Gruppe über UI konfigurierbar
+
+Jede Agent-Gruppe bekommt eigene Einstellungen für API Key und Model, konfigurierbar über das Dashboard:
+
+```typescript
+interface AgentGroup {
+  // ... bestehende Felder ...
+  apiKey?: string;                     // Eigener API Key (verschlüsselt in DB)
+                                       // Fallback: globaler ANTHROPIC_API_KEY aus .env
+  model: string;                       // Pro Gruppe wählbar (Dropdown im UI)
+  maxTokens: number;                   // Pro Gruppe einstellbar
+  budgetConfig: {
+    maxTokensPerDay: number;           // 0 = unbegrenzt
+    maxTokensPerMonth: number;         // 0 = unbegrenzt
+    alertThreshold: number;            // Warnung bei X% des Budgets (z.B. 80)
+  };
+}
+```
+
+**UI-Elemente im Agent-Gruppen Editor:**
+```
+┌─ Agent-Gruppe bearbeiten: "Support Team" ──────────────────┐
+│                                                              │
+│  Name:        [Support Team              ]                   │
+│  Beschreibung:[Kunden-Support via Telegram]                  │
+│                                                              │
+│  ┌─ AI Einstellungen ─────────────────────────────────────┐ │
+│  │  API Key:    [••••••••••••••sk-ant-1234] [Anzeigen]    │ │
+│  │              ☐ Globalen Key verwenden (aus .env)        │ │
+│  │                                                         │ │
+│  │  Model:      [▼ Claude Sonnet 4        ]                │ │
+│  │              ├─ Claude Opus 4                            │ │
+│  │              ├─ Claude Sonnet 4  ← ausgewählt           │ │
+│  │              └─ Claude Haiku 3.5                         │ │
+│  │                                                         │ │
+│  │  Max Tokens: [8192                     ]                │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│                                                              │
+│  ┌─ Budget ───────────────────────────────────────────────┐ │
+│  │  Tages-Limit:   [100000    ] Tokens (0 = unbegrenzt)   │ │
+│  │  Monats-Limit:  [2000000   ] Tokens (0 = unbegrenzt)   │ │
+│  │  Warnung bei:   [80        ] %                          │ │
+│  │                                                         │ │
+│  │  Verbrauch heute:  23.4k / 100k  ████████░░░░  23%    │ │
+│  │  Verbrauch Monat:  412k / 2M     ██░░░░░░░░░░  21%    │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│                                                              │
+│  [Speichern]  [Abbrechen]                                    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**SQLite Schema Erweiterung:**
+```sql
+-- agent_groups Tabelle erweitern
+ALTER TABLE agent_groups ADD COLUMN api_key_encrypted TEXT;
+ALTER TABLE agent_groups ADD COLUMN budget_max_tokens_day INTEGER DEFAULT 0;
+ALTER TABLE agent_groups ADD COLUMN budget_max_tokens_month INTEGER DEFAULT 0;
+ALTER TABLE agent_groups ADD COLUMN budget_alert_threshold INTEGER DEFAULT 80;
+```
+
+**Sicherheit:** API Keys werden mit AES-256 verschlüsselt in der DB gespeichert. Der Encryption Key kommt aus `ENCRYPTION_KEY` in `.env`. Im UI werden Keys nur maskiert angezeigt.
+
+### Benutzerfreundlicher Scheduler (kein Cron-Syntax)
+
+Der Scheduler soll für Nicht-Techniker bedienbar sein. Statt Cron-Expressions nutzen wir einen visuellen Builder:
+
+```
+┌─ Neuen Job erstellen ──────────────────────────────────────┐
+│                                                              │
+│  Name: [Morning Tech News Digest      ]                     │
+│                                                              │
+│  ┌─ Wann soll der Job laufen? ────────────────────────────┐ │
+│  │                                                         │ │
+│  │  Wiederholung: (●) Täglich  ( ) Wöchentlich            │ │
+│  │                ( ) Monatlich ( ) Einmalig               │ │
+│  │                ( ) Alle X Minuten                        │ │
+│  │                ( ) Bei Kalender-Event                    │ │
+│  │                                                         │ │
+│  │  ┌─ Täglich ─────────────────────────────────────────┐ │ │
+│  │  │  Uhrzeit:     [08] : [00]                         │ │ │
+│  │  │                                                    │ │ │
+│  │  │  An welchen Tagen?                                 │ │ │
+│  │  │  [✓] Mo  [✓] Di  [✓] Mi  [✓] Do  [✓] Fr         │ │ │
+│  │  │  [ ] Sa  [ ] So                                    │ │ │
+│  │  │                                                    │ │ │
+│  │  │  Zeitzone: [▼ Europe/Berlin (MEZ/MESZ)  ]         │ │ │
+│  │  └────────────────────────────────────────────────────┘ │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│                                                              │
+│  ┌─ Was soll passieren? ──────────────────────────────────┐ │
+│  │  Agent-Gruppe: [▼ Research Squad       ]               │ │
+│  │                                                         │ │
+│  │  Aufgabe:                                               │ │
+│  │  ┌──────────────────────────────────────────────────┐  │ │
+│  │  │ Fasse die wichtigsten Tech-News von heute        │  │ │
+│  │  │ zusammen. Fokus auf AI, Cloud und Security.      │  │ │
+│  │  │ Erstelle eine kurze Zusammenfassung mit Links.   │  │ │
+│  │  └──────────────────────────────────────────────────┘  │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│                                                              │
+│  ┌─ Wohin soll das Ergebnis? ─────────────────────────────┐ │
+│  │  Ziel: (●) An Channel senden                           │ │
+│  │        ( ) Per Email senden                             │ │
+│  │        ( ) An Webhook senden                            │ │
+│  │        ( ) In Datei speichern                           │ │
+│  │                                                         │ │
+│  │  Channel: [▼ Telegram "Daily Digest"  ]                │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│                                                              │
+│  Nächste Ausführung: Montag, 24.02.2026 um 08:00 MEZ        │
+│                                                              │
+│  [Erstellen]  [Abbrechen]                                    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Kalender-Event Trigger:**
+```
+┌─ Bei Kalender-Event ──────────────────────────────────────┐
+│                                                            │
+│  Kalender: [▼ Team-Kalender (Google)     ]                │
+│                                                            │
+│  Auslöser:                                                 │
+│  (●) Vor dem Event   [ 30 ] Minuten vorher                │
+│  ( ) Beim Event-Start                                      │
+│  ( ) Nach dem Event   [   ] Minuten nachher                │
+│                                                            │
+│  Filter (optional):                                        │
+│  Event-Titel enthält: [Sprint Planning        ]            │
+│                                                            │
+│  Verfügbare Variablen im Prompt:                           │
+│  {{event_title}} {{event_time}} {{event_description}}      │
+│  {{event_attendees}} {{event_location}}                    │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Implementierung:** Das UI generiert intern die Cron-Expression aus den benutzerfreundlichen Eingaben. Der User sieht nie Cron-Syntax. Die Timezone wird pro Job gespeichert und `node-cron` berechnet die nächste Ausführungszeit entsprechend.
+
+```typescript
+// Interner Konverter: UI-Input → Cron
+function buildCronFromUI(input: ScheduleUIInput): string {
+  // Beispiel: Täglich 08:00, Mo-Fr, Europe/Berlin
+  // → "0 8 * * 1-5" + timezone: "Europe/Berlin"
+}
+
+interface ScheduleUIInput {
+  type: 'daily' | 'weekly' | 'monthly' | 'once' | 'interval' | 'calendar_event';
+  time?: { hour: number; minute: number };
+  days?: number[];                     // 0=So, 1=Mo, ..., 6=Sa
+  timezone: string;                    // IANA timezone, z.B. "Europe/Berlin"
+  intervalMinutes?: number;
+  calendarTrigger?: {
+    calendarId: string;
+    minutesBefore?: number;
+    minutesAfter?: number;
+    titleFilter?: string;
+  };
+}
