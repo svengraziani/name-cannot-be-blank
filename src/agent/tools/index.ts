@@ -18,7 +18,9 @@ export function registerBuiltinTools(): void {
   toolRegistry.register(broadcastEventTool);
   toolRegistry.register(queryAgentsTool);
 
-  console.log(`[tools] ${toolRegistry.getAllNames().length} tools registered: ${toolRegistry.getAllNames().join(', ')}`);
+  console.log(
+    `[tools] ${toolRegistry.getAllNames().length} tools registered: ${toolRegistry.getAllNames().join(', ')}`,
+  );
 }
 
 export { toolRegistry } from './registry';

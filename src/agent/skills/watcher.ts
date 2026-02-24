@@ -3,7 +3,6 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import { getSkillsDir, scanSkills } from './loader';
 import { EventEmitter } from 'events';
 
@@ -24,7 +23,7 @@ export function startSkillWatcher(): void {
   }
 
   try {
-    watcher = fs.watch(dir, { recursive: true }, (eventType, filename) => {
+    watcher = fs.watch(dir, { recursive: true }, (_eventType, filename) => {
       if (!filename) return;
       // Ignore _registry.json changes to avoid loops
       if (filename === '_registry.json') return;

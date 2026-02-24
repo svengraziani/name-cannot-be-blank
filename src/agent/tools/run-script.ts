@@ -42,7 +42,13 @@ export const runScriptTool: AgentTool = {
       for (const [key, val] of Object.entries(process.env)) {
         if (val === undefined) continue;
         const lower = key.toLowerCase();
-        if (lower.includes('key') || lower.includes('secret') || lower.includes('token') || lower.includes('password') || lower.includes('pass')) {
+        if (
+          lower.includes('key') ||
+          lower.includes('secret') ||
+          lower.includes('token') ||
+          lower.includes('password') ||
+          lower.includes('pass')
+        ) {
           continue;
         }
         safeEnv[key] = val;
@@ -97,7 +103,7 @@ export const runScriptTool: AgentTool = {
 
         resolve({
           content: parts.join('\n\n'),
-          isError: killed || (code !== 0),
+          isError: killed || code !== 0,
         });
       });
 

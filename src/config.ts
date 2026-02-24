@@ -14,7 +14,7 @@ export const config = {
     botToken: process.env.TELEGRAM_BOT_TOKEN || '',
     allowedUsers: (process.env.TELEGRAM_ALLOWED_USERS || '')
       .split(',')
-      .map(s => s.trim())
+      .map((s) => s.trim())
       .filter(Boolean),
   },
 
@@ -34,7 +34,7 @@ export const config = {
     pollIntervalMs: parseInt(process.env.EMAIL_POLL_INTERVAL_MS || '30000', 10),
     allowedSenders: (process.env.EMAIL_ALLOWED_SENDERS || '')
       .split(',')
-      .map(s => s.trim())
+      .map((s) => s.trim())
       .filter(Boolean),
   },
 };

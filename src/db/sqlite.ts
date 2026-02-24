@@ -142,8 +142,16 @@ export function getChannel(id: string): ChannelRow | undefined {
   return getDb().prepare('SELECT * FROM channels WHERE id = ?').get(id) as ChannelRow | undefined;
 }
 
-export function upsertChannel(channel: { id: string; type: string; name: string; config: string; enabled: number }): void {
-  getDb().prepare(`
+export function upsertChannel(channel: {
+  id: string;
+  type: string;
+  name: string;
+  config: string;
+  enabled: number;
+}): void {
+  getDb()
+    .prepare(
+      `
     INSERT INTO channels (id, type, name, config, enabled, updated_at)
     VALUES (?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(id) DO UPDATE SET
@@ -151,7 +159,9 @@ export function upsertChannel(channel: { id: string; type: string; name: string;
       config = excluded.config,
       enabled = excluded.enabled,
       updated_at = datetime('now')
-  `).run(channel.id, channel.type, channel.name, channel.config, channel.enabled);
+  `,
+    )
+    .run(channel.id, channel.type, channel.name, channel.config, channel.enabled);
 }
 
 export function updateChannelStatus(id: string, status: string): void {
@@ -165,42 +175,54 @@ export function deleteChannel(id: string): void {
 // --- Conversation helpers ---
 
 export function getOrCreateConversation(channelId: string, externalId: string, title?: string): string {
-  const existing = getDb().prepare(
-    'SELECT id FROM conversations WHERE channel_id = ? AND external_id = ?'
-  ).get(channelId, externalId) as { id: string } | undefined;
+  const existing = getDb()
+    .prepare('SELECT id FROM conversations WHERE channel_id = ? AND external_id = ?')
+    .get(channelId, externalId) as { id: string } | undefined;
 
   if (existing) return existing.id;
 
   const id = require('uuid').v4();
-  getDb().prepare(
-    "INSERT INTO conversations (id, channel_id, external_id, title) VALUES (?, ?, ?, ?)"
-  ).run(id, channelId, externalId, title || externalId);
+  getDb()
+    .prepare('INSERT INTO conversations (id, channel_id, external_id, title) VALUES (?, ?, ?, ?)')
+    .run(id, channelId, externalId, title || externalId);
   return id;
 }
 
 export function getConversationMessages(conversationId: string, limit = 50): Array<{ role: string; content: string }> {
-  return getDb().prepare(
-    'SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?'
-  ).all(conversationId, limit).reverse() as Array<{ role: string; content: string }>;
+  return getDb()
+    .prepare('SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?')
+    .all(conversationId, limit)
+    .reverse() as Array<{ role: string; content: string }>;
 }
 
-export function addMessage(conversationId: string, role: string, content: string, channelType?: string, externalSender?: string): number {
-  const result = getDb().prepare(
-    "INSERT INTO messages (conversation_id, role, content, channel_type, external_sender) VALUES (?, ?, ?, ?, ?)"
-  ).run(conversationId, role, content, channelType, externalSender);
+export function addMessage(
+  conversationId: string,
+  role: string,
+  content: string,
+  channelType?: string,
+  externalSender?: string,
+): number {
+  const result = getDb()
+    .prepare(
+      'INSERT INTO messages (conversation_id, role, content, channel_type, external_sender) VALUES (?, ?, ?, ?, ?)',
+    )
+    .run(conversationId, role, content, channelType, externalSender);
   return result.lastInsertRowid as number;
 }
 
 // --- Agent run tracking ---
 
 export function createAgentRun(conversationId: string, inputMessageId: number): number {
-  const result = getDb().prepare(
-    "INSERT INTO agent_runs (conversation_id, input_message_id, status) VALUES (?, ?, 'pending')"
-  ).run(conversationId, inputMessageId);
+  const result = getDb()
+    .prepare("INSERT INTO agent_runs (conversation_id, input_message_id, status) VALUES (?, ?, 'pending')")
+    .run(conversationId, inputMessageId);
   return result.lastInsertRowid as number;
 }
 
-export function updateAgentRun(id: number, update: { status?: string; input_tokens?: number; output_tokens?: number; error?: string }): void {
+export function updateAgentRun(
+  id: number,
+  update: { status?: string; input_tokens?: number; output_tokens?: number; error?: string },
+): void {
   const sets: string[] = [];
   const values: unknown[] = [];
 
@@ -213,19 +235,28 @@ export function updateAgentRun(id: number, update: { status?: string; input_toke
       sets.push("completed_at = datetime('now')");
     }
   }
-  if (update.input_tokens !== undefined) { sets.push('input_tokens = ?'); values.push(update.input_tokens); }
-  if (update.output_tokens !== undefined) { sets.push('output_tokens = ?'); values.push(update.output_tokens); }
-  if (update.error !== undefined) { sets.push('error = ?'); values.push(update.error); }
+  if (update.input_tokens !== undefined) {
+    sets.push('input_tokens = ?');
+    values.push(update.input_tokens);
+  }
+  if (update.output_tokens !== undefined) {
+    sets.push('output_tokens = ?');
+    values.push(update.output_tokens);
+  }
+  if (update.error !== undefined) {
+    sets.push('error = ?');
+    values.push(update.error);
+  }
 
   if (sets.length === 0) return;
   values.push(id);
-  getDb().prepare(`UPDATE agent_runs SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+  getDb()
+    .prepare(`UPDATE agent_runs SET ${sets.join(', ')} WHERE id = ?`)
+    .run(...values);
 }
 
 export function getRecentRuns(limit = 20): unknown[] {
-  return getDb().prepare(
-    'SELECT * FROM agent_runs ORDER BY created_at DESC LIMIT ?'
-  ).all(limit);
+  return getDb().prepare('SELECT * FROM agent_runs ORDER BY created_at DESC LIMIT ?').all(limit);
 }
 
 // --- API Call Logging (Feature 3) ---
@@ -241,16 +272,35 @@ export function logApiCall(call: {
 }): void {
   // Check if agent_group_id column exists (added by groups schema migration)
   const columns = getDb().pragma('table_info(api_calls)') as Array<{ name: string }>;
-  const hasGroupColumn = columns.some(c => c.name === 'agent_group_id');
+  const hasGroupColumn = columns.some((c) => c.name === 'agent_group_id');
 
   if (hasGroupColumn && call.agent_group_id) {
-    getDb().prepare(
-      'INSERT INTO api_calls (conversation_id, model, input_tokens, output_tokens, duration_ms, isolated, agent_group_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(call.conversation_id || null, call.model, call.input_tokens, call.output_tokens, call.duration_ms, call.isolated ? 1 : 0, call.agent_group_id);
+    getDb()
+      .prepare(
+        'INSERT INTO api_calls (conversation_id, model, input_tokens, output_tokens, duration_ms, isolated, agent_group_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        call.conversation_id || null,
+        call.model,
+        call.input_tokens,
+        call.output_tokens,
+        call.duration_ms,
+        call.isolated ? 1 : 0,
+        call.agent_group_id,
+      );
   } else {
-    getDb().prepare(
-      'INSERT INTO api_calls (conversation_id, model, input_tokens, output_tokens, duration_ms, isolated) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(call.conversation_id || null, call.model, call.input_tokens, call.output_tokens, call.duration_ms, call.isolated ? 1 : 0);
+    getDb()
+      .prepare(
+        'INSERT INTO api_calls (conversation_id, model, input_tokens, output_tokens, duration_ms, isolated) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        call.conversation_id || null,
+        call.model,
+        call.input_tokens,
+        call.output_tokens,
+        call.duration_ms,
+        call.isolated ? 1 : 0,
+      );
   }
 }
 
@@ -261,14 +311,18 @@ export function getUsageSummary(): {
   total_cost_usd: number;
   avg_duration_ms: number;
 } {
-  const row = getDb().prepare(`
+  const row = getDb()
+    .prepare(
+      `
     SELECT
       COUNT(*) as total_calls,
       COALESCE(SUM(input_tokens), 0) as total_input_tokens,
       COALESCE(SUM(output_tokens), 0) as total_output_tokens,
       COALESCE(AVG(duration_ms), 0) as avg_duration_ms
     FROM api_calls
-  `).get() as any;
+  `,
+    )
+    .get() as any;
 
   // Approximate cost: Sonnet input=$3/MTok, output=$15/MTok
   const inputCost = (row.total_input_tokens / 1_000_000) * 3;
@@ -286,7 +340,9 @@ export function getUsageDaily(days = 30): Array<{
   input_tokens: number;
   output_tokens: number;
 }> {
-  return getDb().prepare(`
+  return getDb()
+    .prepare(
+      `
     SELECT
       date(created_at) as date,
       COUNT(*) as calls,
@@ -296,7 +352,9 @@ export function getUsageDaily(days = 30): Array<{
     WHERE created_at >= datetime('now', ?)
     GROUP BY date(created_at)
     ORDER BY date ASC
-  `).all(`-${days} days`) as any[];
+  `,
+    )
+    .all(`-${days} days`) as any[];
 }
 
 export function getUsageByModel(): Array<{
@@ -305,7 +363,9 @@ export function getUsageByModel(): Array<{
   input_tokens: number;
   output_tokens: number;
 }> {
-  return getDb().prepare(`
+  return getDb()
+    .prepare(
+      `
     SELECT
       model,
       COUNT(*) as calls,
@@ -314,13 +374,13 @@ export function getUsageByModel(): Array<{
     FROM api_calls
     GROUP BY model
     ORDER BY calls DESC
-  `).all() as any[];
+  `,
+    )
+    .all() as any[];
 }
 
 export function getRecentApiCalls(limit = 50): unknown[] {
-  return getDb().prepare(
-    'SELECT * FROM api_calls ORDER BY created_at DESC LIMIT ?'
-  ).all(limit);
+  return getDb().prepare('SELECT * FROM api_calls ORDER BY created_at DESC LIMIT ?').all(limit);
 }
 
 // --- Loop Tasks (Feature 2) ---
@@ -345,9 +405,9 @@ export function createLoopTask(task: {
   output_file?: string;
   max_iterations?: number;
 }): number {
-  const result = getDb().prepare(
-    'INSERT INTO loop_tasks (name, prompt_file, output_file, max_iterations) VALUES (?, ?, ?, ?)'
-  ).run(task.name, task.prompt_file, task.output_file || null, task.max_iterations || 10);
+  const result = getDb()
+    .prepare('INSERT INTO loop_tasks (name, prompt_file, output_file, max_iterations) VALUES (?, ?, ?, ?)')
+    .run(task.name, task.prompt_file, task.output_file || null, task.max_iterations || 10);
   return result.lastInsertRowid as number;
 }
 
@@ -359,22 +419,39 @@ export function getAllLoopTasks(): LoopTaskRow[] {
   return getDb().prepare('SELECT * FROM loop_tasks ORDER BY created_at DESC').all() as LoopTaskRow[];
 }
 
-export function updateLoopTask(id: number, update: {
-  status?: string;
-  iteration?: number;
-  last_output?: string;
-  error?: string;
-}): void {
+export function updateLoopTask(
+  id: number,
+  update: {
+    status?: string;
+    iteration?: number;
+    last_output?: string;
+    error?: string;
+  },
+): void {
   const sets: string[] = ["updated_at = datetime('now')"];
   const values: unknown[] = [];
 
-  if (update.status !== undefined) { sets.push('status = ?'); values.push(update.status); }
-  if (update.iteration !== undefined) { sets.push('iteration = ?'); values.push(update.iteration); }
-  if (update.last_output !== undefined) { sets.push('last_output = ?'); values.push(update.last_output); }
-  if (update.error !== undefined) { sets.push('error = ?'); values.push(update.error); }
+  if (update.status !== undefined) {
+    sets.push('status = ?');
+    values.push(update.status);
+  }
+  if (update.iteration !== undefined) {
+    sets.push('iteration = ?');
+    values.push(update.iteration);
+  }
+  if (update.last_output !== undefined) {
+    sets.push('last_output = ?');
+    values.push(update.last_output);
+  }
+  if (update.error !== undefined) {
+    sets.push('error = ?');
+    values.push(update.error);
+  }
 
   values.push(id);
-  getDb().prepare(`UPDATE loop_tasks SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+  getDb()
+    .prepare(`UPDATE loop_tasks SET ${sets.join(', ')} WHERE id = ?`)
+    .run(...values);
 }
 
 export function deleteLoopTask(id: number): void {
@@ -383,14 +460,16 @@ export function deleteLoopTask(id: number): void {
 
 // --- Auth (Feature 4) ---
 
-export function getUserByUsername(username: string): { id: number; username: string; password_hash: string; role: string } | undefined {
+export function getUserByUsername(
+  username: string,
+): { id: number; username: string; password_hash: string; role: string } | undefined {
   return getDb().prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
 }
 
 export function createUser(username: string, passwordHash: string, role = 'admin'): number {
-  const result = getDb().prepare(
-    'INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)'
-  ).run(username, passwordHash, role);
+  const result = getDb()
+    .prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
+    .run(username, passwordHash, role);
   return result.lastInsertRowid as number;
 }
 
@@ -420,7 +499,8 @@ export function cleanExpiredSessions(): void {
 export function checkRateLimit(key: string, maxRequests: number, windowSeconds: number): boolean {
   const now = new Date().toISOString();
   const row = getDb().prepare('SELECT count, window_start FROM rate_limits WHERE key = ?').get(key) as
-    { count: number; window_start: string } | undefined;
+    | { count: number; window_start: string }
+    | undefined;
 
   if (!row) {
     getDb().prepare('INSERT INTO rate_limits (key, count, window_start) VALUES (?, 1, ?)').run(key, now);

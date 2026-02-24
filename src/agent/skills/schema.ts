@@ -11,12 +11,15 @@ export interface SkillManifest {
   version: string;
   inputSchema: {
     type: 'object';
-    properties: Record<string, {
-      type: string;
-      description?: string;
-      enum?: string[];
-      default?: unknown;
-    }>;
+    properties: Record<
+      string,
+      {
+        type: string;
+        description?: string;
+        enum?: string[];
+        default?: unknown;
+      }
+    >;
     required?: string[];
   };
   handler: string; // relative path to handler.js (e.g. "./handler.js")

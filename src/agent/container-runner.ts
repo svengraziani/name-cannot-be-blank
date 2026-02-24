@@ -9,7 +9,6 @@
  */
 
 import { spawn } from 'child_process';
-import { config } from '../config';
 import { EventEmitter } from 'events';
 import { getSkillsDir } from './skills/loader';
 
@@ -75,14 +74,16 @@ async function executeContainer(input: ContainerInput): Promise<ContainerResult>
   return new Promise((resolve, reject) => {
     const args = [
       'run',
-      '--rm',                              // Auto-remove after exit
-      '-i',                                // Interactive (stdin)
-      '--memory=512m',                     // Memory limit
-      '--cpus=0.5',                        // CPU limit
-      '--read-only',                       // Read-only filesystem
-      '--tmpfs=/tmp:rw,noexec,nosuid',     // Writable tmp only
-      '-v', `${getSkillsDir()}:/skills:ro`, // Mount skills directory (read-only)
-      '--name', `agent-run-${Date.now()}`,
+      '--rm', // Auto-remove after exit
+      '-i', // Interactive (stdin)
+      '--memory=512m', // Memory limit
+      '--cpus=0.5', // CPU limit
+      '--read-only', // Read-only filesystem
+      '--tmpfs=/tmp:rw,noexec,nosuid', // Writable tmp only
+      '-v',
+      `${getSkillsDir()}:/skills:ro`, // Mount skills directory (read-only)
+      '--name',
+      `agent-run-${Date.now()}`,
       AGENT_IMAGE,
     ];
 

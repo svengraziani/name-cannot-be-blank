@@ -53,12 +53,22 @@ export class WhatsAppAdapter extends ChannelAdapter {
     try {
       // Clean up previous socket if any
       if (this.sock) {
-        try { this.sock.end(undefined); } catch {}
+        try {
+          this.sock.end(undefined);
+        } catch {
+          /* ignored */
+        }
         this.sock = undefined;
       }
 
       // Dynamic import of baileys
-      const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers, fetchLatestBaileysVersion } = await import('baileys');
+      const {
+        default: makeWASocket,
+        useMultiFileAuthState,
+        DisconnectReason,
+        Browsers,
+        fetchLatestBaileysVersion,
+      } = await import('baileys');
 
       const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
 
@@ -71,7 +81,7 @@ export class WhatsAppAdapter extends ChannelAdapter {
           version = versionInfo.version;
           console.log(`[whatsapp:${this.channelId}] Using WA version: ${version.join('.')}`);
         }
-      } catch (err) {
+      } catch (_err) {
         console.warn(`[whatsapp:${this.channelId}] Failed to fetch latest version, using bundled default`);
       }
 
@@ -95,7 +105,9 @@ export class WhatsAppAdapter extends ChannelAdapter {
           this.qrRetries++;
           this.reconnectAttempts = 0; // Reset reconnect counter when QR is shown
           this.emit('qr', qr);
-          console.log(`[whatsapp:${this.channelId}] QR code generated (attempt ${this.qrRetries}/${MAX_QR_RETRIES}) - scan via Web UI`);
+          console.log(
+            `[whatsapp:${this.channelId}] QR code generated (attempt ${this.qrRetries}/${MAX_QR_RETRIES}) - scan via Web UI`,
+          );
 
           if (this.qrRetries > MAX_QR_RETRIES) {
             console.log(`[whatsapp:${this.channelId}] QR not scanned after ${MAX_QR_RETRIES} attempts, giving up`);
@@ -157,12 +169,17 @@ export class WhatsAppAdapter extends ChannelAdapter {
             console.log(`[whatsapp:${this.channelId}] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached`);
             // Clear potentially corrupt auth state so next connect gets fresh QR
             this.clearAuthState();
-            this.setStatus('error', `Connection failed after ${MAX_RECONNECT_ATTEMPTS} attempts. Auth state cleared. Delete and recreate, or restart the gateway.`);
+            this.setStatus(
+              'error',
+              `Connection failed after ${MAX_RECONNECT_ATTEMPTS} attempts. Auth state cleared. Delete and recreate, or restart the gateway.`,
+            );
             return;
           }
 
           const backoff = Math.min(INITIAL_BACKOFF_MS * Math.pow(2, this.reconnectAttempts - 1), MAX_BACKOFF_MS);
-          console.log(`[whatsapp:${this.channelId}] Reconnecting in ${backoff}ms (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+          console.log(
+            `[whatsapp:${this.channelId}] Reconnecting in ${backoff}ms (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`,
+          );
           this.scheduleReconnect(backoff);
         }
       });
@@ -173,10 +190,7 @@ export class WhatsAppAdapter extends ChannelAdapter {
         for (const msg of upsert.messages) {
           if (!msg.message || msg.key.fromMe) continue;
 
-          const text =
-            msg.message.conversation ||
-            msg.message.extendedTextMessage?.text ||
-            '';
+          const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
 
           if (!text) continue;
 
@@ -206,7 +220,7 @@ export class WhatsAppAdapter extends ChannelAdapter {
 
     this.reconnectTimer = setTimeout(() => {
       if (!this.stopping) {
-        this.connect().catch(err => {
+        this.connect().catch((err) => {
           console.error(`[whatsapp:${this.channelId}] Reconnect failed:`, err);
         });
       }
@@ -220,7 +234,11 @@ export class WhatsAppAdapter extends ChannelAdapter {
       this.reconnectTimer = undefined;
     }
     if (this.sock) {
-      try { this.sock.end(undefined); } catch {}
+      try {
+        this.sock.end(undefined);
+      } catch {
+        /* ignored */
+      }
       this.sock = undefined;
     }
     this.setStatus('disconnected');
@@ -236,7 +254,7 @@ export class WhatsAppAdapter extends ChannelAdapter {
     this._qrDataUrl = dataUrl;
   }
 
-  getStatusInfo(): Record<string, unknown> {
+  override getStatusInfo(): Record<string, unknown> {
     return {
       qrCode: this._qrCode,
       qrDataUrl: this._qrDataUrl,

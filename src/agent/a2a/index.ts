@@ -2,7 +2,8 @@
  * A2A Module - Agent-to-Agent Communication Protocol.
  */
 
-export { A2AMessage, AgentIdentity, AgentRole, PREDEFINED_ROLES } from './protocol';
+export type { A2AMessage, AgentIdentity, AgentRole } from './protocol';
+export { PREDEFINED_ROLES } from './protocol';
 export {
   initA2ASchema,
   registerAgent,

@@ -12,17 +12,19 @@ import { v4 as uuid } from 'uuid';
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../../config';
 import { AgentIdentity, PREDEFINED_ROLES } from './protocol';
-import { registerAgent, unregisterAgent, sendMessage, markProcessed, a2aEvents, getAgentsByRole } from './bus';
+import { registerAgent, unregisterAgent, sendMessage, a2aEvents, getAgentsByRole } from './bus';
 import { toolRegistry } from '../tools';
 import { logApiCall } from '../../db/sqlite';
 import { getGroupApiKey } from '../groups/manager';
-import { getSystemPrompt } from '../loop';
 
 // Track running sub-agents
-const runningAgents = new Map<string, {
-  identity: AgentIdentity;
-  abortController: AbortController;
-}>();
+const runningAgents = new Map<
+  string,
+  {
+    identity: AgentIdentity;
+    abortController: AbortController;
+  }
+>();
 
 /**
  * Spawn a sub-agent to handle a delegated task.
@@ -40,9 +42,9 @@ export async function spawnSubAgent(params: {
   const { role, task, context, groupId, parentAgentId, conversationId } = params;
 
   // Find the role definition
-  const roleConfig = PREDEFINED_ROLES.find(r => r.id === role);
+  const roleConfig = PREDEFINED_ROLES.find((r) => r.id === role);
   if (!roleConfig) {
-    return `Error: Unknown agent role "${role}". Available roles: ${PREDEFINED_ROLES.map(r => r.id).join(', ')}`;
+    return `Error: Unknown agent role "${role}". Available roles: ${PREDEFINED_ROLES.map((r) => r.id).join(', ')}`;
   }
 
   // Check if there's already an available agent with this role
@@ -79,9 +81,7 @@ export async function spawnSubAgent(params: {
     const client = new Anthropic({ apiKey: apiKey || config.anthropicApiKey });
 
     // Build messages
-    const messages: Anthropic.MessageParam[] = [
-      { role: 'user', content: task },
-    ];
+    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: task }];
 
     // Get tool definitions filtered by role
     const tools = toolRegistry.getToolDefinitions(roleConfig.tools);
@@ -124,10 +124,8 @@ export async function spawnSubAgent(params: {
       totalOutputTokens += response.usage.output_tokens;
 
       if (response.stop_reason !== 'tool_use') {
-        const textBlocks = response.content.filter(
-          (b): b is Anthropic.TextBlock => b.type === 'text'
-        );
-        const result = textBlocks.map(b => b.text).join('\n') || '(no response)';
+        const textBlocks = response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text');
+        const result = textBlocks.map((b) => b.text).join('\n') || '(no response)';
 
         // Log API usage
         logApiCall({

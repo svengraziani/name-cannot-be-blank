@@ -1,7 +1,6 @@
 import express from 'express';
 import expressWs from 'express-ws';
 import path from 'path';
-import { config } from '../config';
 import { createApiRouter } from './api';
 import { channelManagerEvents } from '../channels/manager';
 import { agentEvents } from '../agent/loop';
@@ -48,7 +47,8 @@ export function createServer() {
     const payload = JSON.stringify({ event, data, ts: Date.now() });
     for (const ws of clients) {
       try {
-        if (ws.readyState === 1) { // OPEN
+        if (ws.readyState === 1) {
+          // OPEN
           ws.send(payload);
         }
       } catch {

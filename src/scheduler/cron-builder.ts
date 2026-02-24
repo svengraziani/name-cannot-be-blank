@@ -119,17 +119,19 @@ export function calculateNextRunTime(trigger: ScheduleTrigger): Date | null {
  */
 export function formatTriggerDescription(trigger: ScheduleTrigger): string {
   const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-  const time = trigger.time ? `${String(trigger.time.hour).padStart(2, '0')}:${String(trigger.time.minute).padStart(2, '0')}` : '08:00';
+  const time = trigger.time
+    ? `${String(trigger.time.hour).padStart(2, '0')}:${String(trigger.time.minute).padStart(2, '0')}`
+    : '08:00';
 
   switch (trigger.type) {
     case 'daily': {
       const days = trigger.days;
       if (!days || days.length === 7) return `Täglich um ${time}`;
       if (days.length === 5 && !days.includes(0) && !days.includes(6)) return `Mo-Fr um ${time}`;
-      return `${days.map(d => dayNames[d]).join(', ')} um ${time}`;
+      return `${days.map((d) => dayNames[d]).join(', ')} um ${time}`;
     }
     case 'weekly':
-      return `Wöchentlich ${(trigger.days || [1]).map(d => dayNames[d]).join(', ')} um ${time}`;
+      return `Wöchentlich ${(trigger.days || [1]).map((d) => dayNames[d]).join(', ')} um ${time}`;
     case 'monthly':
       return `Monatlich am ${trigger.dayOfMonth || 1}. um ${time}`;
     case 'once':

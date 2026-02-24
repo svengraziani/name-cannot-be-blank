@@ -4,7 +4,15 @@
 
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db/sqlite';
-import { ScheduledJob, CalendarSource, CalendarEvent, JobRun, ScheduleTrigger, ScheduleAction, ScheduleOutput } from './types';
+import {
+  ScheduledJob,
+  CalendarSource,
+  CalendarEvent,
+  JobRun,
+  ScheduleTrigger,
+  ScheduleAction,
+  ScheduleOutput,
+} from './types';
 
 /**
  * Initialize scheduler tables. Called at startup.
@@ -105,10 +113,21 @@ export function createJob(input: {
   output: ScheduleOutput;
 }): ScheduledJob {
   const id = uuid();
-  getDb().prepare(`
+  getDb()
+    .prepare(
+      `
     INSERT INTO scheduled_jobs (id, name, description, trigger_config, action_config, output_config)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, input.name, input.description || '', JSON.stringify(input.trigger), JSON.stringify(input.action), JSON.stringify(input.output));
+  `,
+    )
+    .run(
+      id,
+      input.name,
+      input.description || '',
+      JSON.stringify(input.trigger),
+      JSON.stringify(input.action),
+      JSON.stringify(input.output),
+    );
   return getJob(id)!;
 }
 
@@ -121,32 +140,60 @@ export function getAllJobs(): ScheduledJob[] {
   return (getDb().prepare('SELECT * FROM scheduled_jobs ORDER BY created_at DESC').all() as any[]).map(rowToJob);
 }
 
-export function updateJob(id: string, updates: Partial<{
-  name: string;
-  description: string;
-  trigger: ScheduleTrigger;
-  action: ScheduleAction;
-  output: ScheduleOutput;
-  enabled: boolean;
-  nextRunAt: string;
-}>): void {
+export function updateJob(
+  id: string,
+  updates: Partial<{
+    name: string;
+    description: string;
+    trigger: ScheduleTrigger;
+    action: ScheduleAction;
+    output: ScheduleOutput;
+    enabled: boolean;
+    nextRunAt: string;
+  }>,
+): void {
   const sets: string[] = ["updated_at = datetime('now')"];
   const values: unknown[] = [];
 
-  if (updates.name !== undefined) { sets.push('name = ?'); values.push(updates.name); }
-  if (updates.description !== undefined) { sets.push('description = ?'); values.push(updates.description); }
-  if (updates.trigger !== undefined) { sets.push('trigger_config = ?'); values.push(JSON.stringify(updates.trigger)); }
-  if (updates.action !== undefined) { sets.push('action_config = ?'); values.push(JSON.stringify(updates.action)); }
-  if (updates.output !== undefined) { sets.push('output_config = ?'); values.push(JSON.stringify(updates.output)); }
-  if (updates.enabled !== undefined) { sets.push('enabled = ?'); values.push(updates.enabled ? 1 : 0); }
-  if (updates.nextRunAt !== undefined) { sets.push('next_run_at = ?'); values.push(updates.nextRunAt); }
+  if (updates.name !== undefined) {
+    sets.push('name = ?');
+    values.push(updates.name);
+  }
+  if (updates.description !== undefined) {
+    sets.push('description = ?');
+    values.push(updates.description);
+  }
+  if (updates.trigger !== undefined) {
+    sets.push('trigger_config = ?');
+    values.push(JSON.stringify(updates.trigger));
+  }
+  if (updates.action !== undefined) {
+    sets.push('action_config = ?');
+    values.push(JSON.stringify(updates.action));
+  }
+  if (updates.output !== undefined) {
+    sets.push('output_config = ?');
+    values.push(JSON.stringify(updates.output));
+  }
+  if (updates.enabled !== undefined) {
+    sets.push('enabled = ?');
+    values.push(updates.enabled ? 1 : 0);
+  }
+  if (updates.nextRunAt !== undefined) {
+    sets.push('next_run_at = ?');
+    values.push(updates.nextRunAt);
+  }
 
   values.push(id);
-  getDb().prepare(`UPDATE scheduled_jobs SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+  getDb()
+    .prepare(`UPDATE scheduled_jobs SET ${sets.join(', ')} WHERE id = ?`)
+    .run(...values);
 }
 
 export function updateJobRunStatus(id: string, status: string, output?: string): void {
-  getDb().prepare(`
+  getDb()
+    .prepare(
+      `
     UPDATE scheduled_jobs SET
       last_run_at = datetime('now'),
       last_run_status = ?,
@@ -154,7 +201,9 @@ export function updateJobRunStatus(id: string, status: string, output?: string):
       run_count = run_count + 1,
       updated_at = datetime('now')
     WHERE id = ?
-  `).run(status, output?.slice(0, 10000) || null, id);
+  `,
+    )
+    .run(status, output?.slice(0, 10000) || null, id);
 }
 
 export function deleteJob(id: string): void {
@@ -164,20 +213,23 @@ export function deleteJob(id: string): void {
 // --- Job Runs ---
 
 export function createJobRun(jobId: string): number {
-  const result = getDb().prepare(
-    "INSERT INTO job_runs (job_id, status) VALUES (?, 'running')"
-  ).run(jobId);
+  const result = getDb().prepare("INSERT INTO job_runs (job_id, status) VALUES (?, 'running')").run(jobId);
   return result.lastInsertRowid as number;
 }
 
-export function completeJobRun(runId: number, update: {
-  status: 'success' | 'error';
-  output?: string;
-  error?: string;
-  inputTokens?: number;
-  outputTokens?: number;
-}): void {
-  getDb().prepare(`
+export function completeJobRun(
+  runId: number,
+  update: {
+    status: 'success' | 'error';
+    output?: string;
+    error?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+  },
+): void {
+  getDb()
+    .prepare(
+      `
     UPDATE job_runs SET
       status = ?,
       output = ?,
@@ -186,14 +238,16 @@ export function completeJobRun(runId: number, update: {
       output_tokens = ?,
       completed_at = datetime('now')
     WHERE id = ?
-  `).run(
-    update.status,
-    update.output?.slice(0, 50000) || null,
-    update.error || null,
-    update.inputTokens || 0,
-    update.outputTokens || 0,
-    runId,
-  );
+  `,
+    )
+    .run(
+      update.status,
+      update.output?.slice(0, 50000) || null,
+      update.error || null,
+      update.inputTokens || 0,
+      update.outputTokens || 0,
+      runId,
+    );
 }
 
 function rowToJobRun(row: any): JobRun {
@@ -211,9 +265,11 @@ function rowToJobRun(row: any): JobRun {
 }
 
 export function getJobRuns(jobId: string, limit = 20): JobRun[] {
-  return (getDb().prepare(
-    'SELECT * FROM job_runs WHERE job_id = ? ORDER BY started_at DESC LIMIT ?'
-  ).all(jobId, limit) as any[]).map(rowToJobRun);
+  return (
+    getDb()
+      .prepare('SELECT * FROM job_runs WHERE job_id = ? ORDER BY started_at DESC LIMIT ?')
+      .all(jobId, limit) as any[]
+  ).map(rowToJobRun);
 }
 
 // --- Calendar Sources ---
@@ -225,10 +281,14 @@ export function createCalendarSource(input: {
   agentGroupId?: string;
 }): CalendarSource {
   const id = uuid();
-  getDb().prepare(`
+  getDb()
+    .prepare(
+      `
     INSERT INTO calendar_sources (id, name, url, poll_interval_minutes, agent_group_id)
     VALUES (?, ?, ?, ?, ?)
-  `).run(id, input.name, input.url, input.pollIntervalMinutes || 15, input.agentGroupId || null);
+  `,
+    )
+    .run(id, input.name, input.url, input.pollIntervalMinutes || 15, input.agentGroupId || null);
   return getCalendarSource(id)!;
 }
 
@@ -250,7 +310,9 @@ export function getCalendarSource(id: string): CalendarSource | undefined {
 }
 
 export function getAllCalendarSources(): CalendarSource[] {
-  return (getDb().prepare('SELECT * FROM calendar_sources ORDER BY created_at DESC').all() as any[]).map(rowToCalendarSource);
+  return (getDb().prepare('SELECT * FROM calendar_sources ORDER BY created_at DESC').all() as any[]).map(
+    rowToCalendarSource,
+  );
 }
 
 export function updateCalendarSyncTime(id: string): void {
@@ -272,7 +334,9 @@ export function upsertCalendarEvent(event: {
   endAt: string;
   recurrence?: string;
 }): void {
-  getDb().prepare(`
+  getDb()
+    .prepare(
+      `
     INSERT INTO calendar_events (calendar_id, uid, title, description, start_at, end_at, recurrence)
     VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(calendar_id, uid) DO UPDATE SET
@@ -281,11 +345,17 @@ export function upsertCalendarEvent(event: {
       start_at = excluded.start_at,
       end_at = excluded.end_at,
       recurrence = excluded.recurrence
-  `).run(
-    event.calendarId, event.uid, event.title,
-    event.description || null, event.startAt, event.endAt,
-    event.recurrence || null,
-  );
+  `,
+    )
+    .run(
+      event.calendarId,
+      event.uid,
+      event.title,
+      event.description || null,
+      event.startAt,
+      event.endAt,
+      event.recurrence || null,
+    );
 }
 
 function rowToCalendarEvent(row: any): CalendarEvent {
@@ -304,19 +374,27 @@ function rowToCalendarEvent(row: any): CalendarEvent {
 }
 
 export function getUpcomingEvents(calendarId: string, withinMinutes = 60): CalendarEvent[] {
-  return (getDb().prepare(`
+  return (
+    getDb()
+      .prepare(
+        `
     SELECT * FROM calendar_events
     WHERE calendar_id = ?
       AND start_at >= datetime('now')
       AND start_at <= datetime('now', '+${withinMinutes} minutes')
     ORDER BY start_at ASC
-  `).all(calendarId) as any[]).map(rowToCalendarEvent);
+  `,
+      )
+      .all(calendarId) as any[]
+  ).map(rowToCalendarEvent);
 }
 
 export function getCalendarEvents(calendarId: string, limit = 100): CalendarEvent[] {
-  return (getDb().prepare(
-    'SELECT * FROM calendar_events WHERE calendar_id = ? ORDER BY start_at DESC LIMIT ?'
-  ).all(calendarId, limit) as any[]).map(rowToCalendarEvent);
+  return (
+    getDb()
+      .prepare('SELECT * FROM calendar_events WHERE calendar_id = ? ORDER BY start_at DESC LIMIT ?')
+      .all(calendarId, limit) as any[]
+  ).map(rowToCalendarEvent);
 }
 
 // Add unique index for upsert

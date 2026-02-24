@@ -95,7 +95,8 @@ async function routeToWebhook(output: ScheduleOutput, result: string, jobName: s
 }
 
 async function routeToFile(output: ScheduleOutput, result: string, jobName: string): Promise<void> {
-  const filePath = output.filePath || path.join(config.dataDir, 'scheduler-output', `${jobName.replace(/[^a-zA-Z0-9-_]/g, '_')}.md`);
+  const filePath =
+    output.filePath || path.join(config.dataDir, 'scheduler-output', `${jobName.replace(/[^a-zA-Z0-9-_]/g, '_')}.md`);
   const dir = path.dirname(filePath);
 
   if (!fs.existsSync(dir)) {

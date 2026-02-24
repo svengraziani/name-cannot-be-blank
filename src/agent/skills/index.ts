@@ -5,7 +5,7 @@
  * Built-in tools are exported as skills, and custom skills can be uploaded.
  */
 
-export { SkillManifest, SkillDefinition, SkillRegistry } from './schema';
+export type { SkillManifest, SkillDefinition, SkillRegistry } from './schema';
 export {
   ensureSkillsDir,
   scanSkills,

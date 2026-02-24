@@ -18,11 +18,14 @@ a2aEvents.setMaxListeners(100);
 const activeAgents = new Map<string, AgentIdentity>();
 
 // Pending request handlers (for synchronous delegate_task with waitForResult)
-const pendingRequests = new Map<string, {
-  resolve: (response: A2AMessage) => void;
-  reject: (err: Error) => void;
-  timeout: ReturnType<typeof setTimeout>;
-}>();
+const pendingRequests = new Map<
+  string,
+  {
+    resolve: (response: A2AMessage) => void;
+    reject: (err: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }
+>();
 
 /**
  * Initialize the A2A tables in SQLite.
@@ -85,7 +88,7 @@ export function getActiveAgents(): AgentIdentity[] {
  * Get active agents by role.
  */
 export function getAgentsByRole(role: string): AgentIdentity[] {
-  return Array.from(activeAgents.values()).filter(a => a.role === role);
+  return Array.from(activeAgents.values()).filter((a) => a.role === role);
 }
 
 /**
@@ -99,23 +102,27 @@ export function sendMessage(message: Omit<A2AMessage, 'id' | 'timestamp'>): A2AM
   };
 
   // Persist to SQLite
-  getDb().prepare(`
+  getDb()
+    .prepare(
+      `
     INSERT INTO a2a_messages (id, type, from_agent_id, from_role, from_group_id, to_agent_id, conversation_id, action, content, metadata, reply_to, ttl, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-  `).run(
-    fullMessage.id,
-    fullMessage.type,
-    fullMessage.from.id,
-    fullMessage.from.role,
-    fullMessage.from.groupId,
-    fullMessage.to,
-    fullMessage.conversationId,
-    fullMessage.payload.action,
-    fullMessage.payload.content,
-    JSON.stringify(fullMessage.payload.metadata || {}),
-    fullMessage.replyTo || null,
-    fullMessage.ttl || null,
-  );
+  `,
+    )
+    .run(
+      fullMessage.id,
+      fullMessage.type,
+      fullMessage.from.id,
+      fullMessage.from.role,
+      fullMessage.from.groupId,
+      fullMessage.to,
+      fullMessage.conversationId,
+      fullMessage.payload.action,
+      fullMessage.payload.content,
+      JSON.stringify(fullMessage.payload.metadata || {}),
+      fullMessage.replyTo || null,
+      fullMessage.ttl || null,
+    );
 
   // Route message
   if (fullMessage.to === '*') {
@@ -160,9 +167,13 @@ export function sendRequestAndWait(
  * Mark a message as processed and optionally send a response.
  */
 export function markProcessed(messageId: string, response?: Omit<A2AMessage, 'id' | 'timestamp'>): void {
-  getDb().prepare(`
+  getDb()
+    .prepare(
+      `
     UPDATE a2a_messages SET status = 'processed', processed_at = datetime('now') WHERE id = ?
-  `).run(messageId);
+  `,
+    )
+    .run(messageId);
 
   if (response) {
     const sent = sendMessage(response);
@@ -189,9 +200,9 @@ export function updateMessageStatus(messageId: string, status: A2AMessageStatus)
  * Get messages for a conversation.
  */
 export function getConversationMessages(conversationId: string, limit = 100): A2AMessage[] {
-  const rows = getDb().prepare(
-    'SELECT * FROM a2a_messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ?'
-  ).all(conversationId, limit) as any[];
+  const rows = getDb()
+    .prepare('SELECT * FROM a2a_messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ?')
+    .all(conversationId, limit) as any[];
 
   return rows.map(rowToMessage);
 }
@@ -211,7 +222,9 @@ export function getAgentMessages(agentId: string, status?: A2AMessageStatus, lim
   query += ' ORDER BY created_at DESC LIMIT ?';
   params.push(limit);
 
-  const rows = getDb().prepare(query).all(...params) as any[];
+  const rows = getDb()
+    .prepare(query)
+    .all(...params) as any[];
   return rows.map(rowToMessage);
 }
 
@@ -219,9 +232,7 @@ export function getAgentMessages(agentId: string, status?: A2AMessageStatus, lim
  * Get all recent A2A messages (for dashboard).
  */
 export function getRecentA2AMessages(limit = 100): A2AMessage[] {
-  const rows = getDb().prepare(
-    'SELECT * FROM a2a_messages ORDER BY created_at DESC LIMIT ?'
-  ).all(limit) as any[];
+  const rows = getDb().prepare('SELECT * FROM a2a_messages ORDER BY created_at DESC LIMIT ?').all(limit) as any[];
   return rows.map(rowToMessage);
 }
 

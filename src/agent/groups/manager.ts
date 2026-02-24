@@ -4,7 +4,7 @@
 
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../../db/sqlite';
-import { AgentGroup, AgentGroupRole, CreateAgentGroupInput, UpdateAgentGroupInput, AgentGroupStats } from './types';
+import type { AgentGroup, CreateAgentGroupInput, UpdateAgentGroupInput, AgentGroupStats } from './types';
 import { encrypt, decrypt } from './encryption';
 
 /**
@@ -37,7 +37,7 @@ export function initAgentGroupsSchema(): void {
 
   // Add agent_group_id column to channels if it doesn't exist
   const channelColumns = db.pragma('table_info(channels)') as Array<{ name: string }>;
-  const hasGroupColumn = channelColumns.some(c => c.name === 'agent_group_id');
+  const hasGroupColumn = channelColumns.some((c) => c.name === 'agent_group_id');
   if (!hasGroupColumn) {
     db.exec(`ALTER TABLE channels ADD COLUMN agent_group_id TEXT REFERENCES agent_groups(id) ON DELETE SET NULL`);
     console.log('[groups] Added agent_group_id column to channels table');
@@ -45,7 +45,7 @@ export function initAgentGroupsSchema(): void {
 
   // Add agent_group_id column to api_calls for per-group usage tracking
   const apiCallColumns = db.pragma('table_info(api_calls)') as Array<{ name: string }>;
-  const hasApiCallGroupColumn = apiCallColumns.some(c => c.name === 'agent_group_id');
+  const hasApiCallGroupColumn = apiCallColumns.some((c) => c.name === 'agent_group_id');
   if (!hasApiCallGroupColumn) {
     db.exec(`ALTER TABLE api_calls ADD COLUMN agent_group_id TEXT`);
     console.log('[groups] Added agent_group_id column to api_calls table');
@@ -89,14 +89,16 @@ export function createAgentGroup(input: CreateAgentGroupInput): AgentGroup {
     apiKeyEncrypted = encrypt(input.apiKey);
   }
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO agent_groups (
       id, name, description, system_prompt, api_key_encrypted,
       model, max_tokens, skills, roles,
       container_mode, max_concurrent_agents,
       budget_max_tokens_day, budget_max_tokens_month, budget_alert_threshold
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     id,
     input.name,
     input.description || '',
@@ -123,7 +125,9 @@ export function getAgentGroup(id: string): AgentGroup | undefined {
 }
 
 export function getAllAgentGroups(): AgentGroup[] {
-  const rows = getDb().prepare('SELECT * FROM agent_groups ORDER BY created_at DESC').all() as Array<Record<string, unknown>>;
+  const rows = getDb().prepare('SELECT * FROM agent_groups ORDER BY created_at DESC').all() as Array<
+    Record<string, unknown>
+  >;
   return rows.map(rowToGroup);
 }
 
@@ -134,18 +138,54 @@ export function updateAgentGroup(id: string, input: UpdateAgentGroupInput): Agen
   const sets: string[] = ["updated_at = datetime('now')"];
   const values: unknown[] = [];
 
-  if (input.name !== undefined) { sets.push('name = ?'); values.push(input.name); }
-  if (input.description !== undefined) { sets.push('description = ?'); values.push(input.description); }
-  if (input.systemPrompt !== undefined) { sets.push('system_prompt = ?'); values.push(input.systemPrompt); }
-  if (input.model !== undefined) { sets.push('model = ?'); values.push(input.model); }
-  if (input.maxTokens !== undefined) { sets.push('max_tokens = ?'); values.push(input.maxTokens); }
-  if (input.skills !== undefined) { sets.push('skills = ?'); values.push(JSON.stringify(input.skills)); }
-  if (input.roles !== undefined) { sets.push('roles = ?'); values.push(JSON.stringify(input.roles)); }
-  if (input.containerMode !== undefined) { sets.push('container_mode = ?'); values.push(input.containerMode ? 1 : 0); }
-  if (input.maxConcurrentAgents !== undefined) { sets.push('max_concurrent_agents = ?'); values.push(input.maxConcurrentAgents); }
-  if (input.budgetMaxTokensDay !== undefined) { sets.push('budget_max_tokens_day = ?'); values.push(input.budgetMaxTokensDay); }
-  if (input.budgetMaxTokensMonth !== undefined) { sets.push('budget_max_tokens_month = ?'); values.push(input.budgetMaxTokensMonth); }
-  if (input.budgetAlertThreshold !== undefined) { sets.push('budget_alert_threshold = ?'); values.push(input.budgetAlertThreshold); }
+  if (input.name !== undefined) {
+    sets.push('name = ?');
+    values.push(input.name);
+  }
+  if (input.description !== undefined) {
+    sets.push('description = ?');
+    values.push(input.description);
+  }
+  if (input.systemPrompt !== undefined) {
+    sets.push('system_prompt = ?');
+    values.push(input.systemPrompt);
+  }
+  if (input.model !== undefined) {
+    sets.push('model = ?');
+    values.push(input.model);
+  }
+  if (input.maxTokens !== undefined) {
+    sets.push('max_tokens = ?');
+    values.push(input.maxTokens);
+  }
+  if (input.skills !== undefined) {
+    sets.push('skills = ?');
+    values.push(JSON.stringify(input.skills));
+  }
+  if (input.roles !== undefined) {
+    sets.push('roles = ?');
+    values.push(JSON.stringify(input.roles));
+  }
+  if (input.containerMode !== undefined) {
+    sets.push('container_mode = ?');
+    values.push(input.containerMode ? 1 : 0);
+  }
+  if (input.maxConcurrentAgents !== undefined) {
+    sets.push('max_concurrent_agents = ?');
+    values.push(input.maxConcurrentAgents);
+  }
+  if (input.budgetMaxTokensDay !== undefined) {
+    sets.push('budget_max_tokens_day = ?');
+    values.push(input.budgetMaxTokensDay);
+  }
+  if (input.budgetMaxTokensMonth !== undefined) {
+    sets.push('budget_max_tokens_month = ?');
+    values.push(input.budgetMaxTokensMonth);
+  }
+  if (input.budgetAlertThreshold !== undefined) {
+    sets.push('budget_alert_threshold = ?');
+    values.push(input.budgetAlertThreshold);
+  }
 
   // Handle API key: null = clear, string = encrypt, undefined = no change
   if (input.apiKey === null) {
@@ -157,7 +197,9 @@ export function updateAgentGroup(id: string, input: UpdateAgentGroupInput): Agen
   }
 
   values.push(id);
-  getDb().prepare(`UPDATE agent_groups SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+  getDb()
+    .prepare(`UPDATE agent_groups SET ${sets.join(', ')} WHERE id = ?`)
+    .run(...values);
 
   return getAgentGroup(id)!;
 }
@@ -175,19 +217,27 @@ export function assignChannelToGroup(channelId: string, groupId: string): void {
   const group = getAgentGroup(groupId);
   if (!group) throw new Error(`Agent group ${groupId} not found`);
 
-  getDb().prepare("UPDATE channels SET agent_group_id = ?, updated_at = datetime('now') WHERE id = ?").run(groupId, channelId);
+  getDb()
+    .prepare("UPDATE channels SET agent_group_id = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(groupId, channelId);
 }
 
 export function unassignChannelFromGroup(channelId: string): void {
-  getDb().prepare("UPDATE channels SET agent_group_id = NULL, updated_at = datetime('now') WHERE id = ?").run(channelId);
+  getDb()
+    .prepare("UPDATE channels SET agent_group_id = NULL, updated_at = datetime('now') WHERE id = ?")
+    .run(channelId);
 }
 
 export function getGroupForChannel(channelId: string): AgentGroup | undefined {
-  const row = getDb().prepare(`
+  const row = getDb()
+    .prepare(
+      `
     SELECT ag.* FROM agent_groups ag
     INNER JOIN channels c ON c.agent_group_id = ag.id
     WHERE c.id = ?
-  `).get(channelId) as Record<string, unknown> | undefined;
+  `,
+    )
+    .get(channelId) as Record<string, unknown> | undefined;
 
   if (!row) return undefined;
   return rowToGroup(row);
@@ -196,20 +246,28 @@ export function getGroupForChannel(channelId: string): AgentGroup | undefined {
 // --- Usage / Stats ---
 
 export function getGroupTokenUsageToday(groupId: string): number {
-  const row = getDb().prepare(`
+  const row = getDb()
+    .prepare(
+      `
     SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total
     FROM api_calls
     WHERE agent_group_id = ? AND date(created_at) = date('now')
-  `).get(groupId) as { total: number };
+  `,
+    )
+    .get(groupId) as { total: number };
   return row.total;
 }
 
 export function getGroupTokenUsageMonth(groupId: string): number {
-  const row = getDb().prepare(`
+  const row = getDb()
+    .prepare(
+      `
     SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total
     FROM api_calls
     WHERE agent_group_id = ? AND created_at >= datetime('now', 'start of month')
-  `).get(groupId) as { total: number };
+  `,
+    )
+    .get(groupId) as { total: number };
   return row.total;
 }
 
@@ -217,12 +275,16 @@ export function getAgentGroupStats(groupId: string): AgentGroupStats {
   const todayTokens = getGroupTokenUsageToday(groupId);
   const monthTokens = getGroupTokenUsageMonth(groupId);
 
-  const runsRow = getDb().prepare(`
+  const runsRow = getDb()
+    .prepare(
+      `
     SELECT COUNT(*) as total FROM agent_runs ar
     INNER JOIN conversations c ON ar.conversation_id = c.id
     INNER JOIN channels ch ON c.channel_id = ch.id
     WHERE ch.agent_group_id = ?
-  `).get(groupId) as { total: number };
+  `,
+    )
+    .get(groupId) as { total: number };
 
   return {
     groupId,

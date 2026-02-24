@@ -2,7 +2,13 @@
  * Agent Groups module - manages agent groups and channel binding.
  */
 
-export { AgentGroup, AgentGroupRole, CreateAgentGroupInput, UpdateAgentGroupInput, AgentGroupStats } from './types';
+export type {
+  AgentGroup,
+  AgentGroupRole,
+  CreateAgentGroupInput,
+  UpdateAgentGroupInput,
+  AgentGroupStats,
+} from './types';
 export {
   initAgentGroupsSchema,
   createAgentGroup,

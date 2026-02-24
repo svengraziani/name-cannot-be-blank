@@ -12,7 +12,7 @@ import {
   getOrCreateConversation,
   ChannelRow,
 } from '../db/sqlite';
-import { processMessage, agentEvents } from '../agent/loop';
+import { processMessage } from '../agent/loop';
 import { resolveAgentConfig, checkGroupBudget } from '../agent/groups/resolver';
 import { getSystemPrompt } from '../agent/loop';
 import { EventEmitter } from 'events';
@@ -56,7 +56,16 @@ export async function createChannel(
     enabled: 1,
   });
 
-  const row = { id, type, name, config: JSON.stringify(channelConfig), enabled: 1, status: 'disconnected', created_at: '', updated_at: '' };
+  const row = {
+    id,
+    type,
+    name,
+    config: JSON.stringify(channelConfig),
+    enabled: 1,
+    status: 'disconnected',
+    created_at: '',
+    updated_at: '',
+  };
   await startChannel(row);
   return id;
 }
@@ -68,7 +77,7 @@ export async function updateChannel(
   id: string,
   updates: { name?: string; config?: Record<string, unknown>; enabled?: boolean },
 ): Promise<void> {
-  const existing = getAllChannels().find(c => c.id === id);
+  const existing = getAllChannels().find((c) => c.id === id);
   if (!existing) throw new Error(`Channel ${id} not found`);
 
   // Stop the existing adapter
@@ -83,7 +92,7 @@ export async function updateChannel(
   });
 
   if (updates.enabled !== false) {
-    const row = getAllChannels().find(c => c.id === id)!;
+    const row = getAllChannels().find((c) => c.id === id)!;
     await startChannel(row);
   }
 }
@@ -116,7 +125,7 @@ export function getChannelStatuses(): Array<{
   agentGroupId?: string;
 }> {
   const channels = getAllChannels();
-  return channels.map(ch => {
+  return channels.map((ch) => {
     const adapter = adapters.get(ch.id);
     return {
       id: ch.id,
@@ -161,59 +170,61 @@ async function startChannel(ch: ChannelRow): Promise<void> {
   }
 
   // Wire up incoming messages to the agent loop
-  adapter.on('message', async (msg: IncomingMessage) => {
-    console.log(`[manager] Message from ${msg.channelType}/${msg.sender}: ${msg.text.slice(0, 100)}`);
+  adapter.on('message', (msg: IncomingMessage) => {
+    void (async () => {
+      console.log(`[manager] Message from ${msg.channelType}/${msg.sender}: ${msg.text.slice(0, 100)}`);
 
-    const conversationId = getOrCreateConversation(msg.channelId, msg.externalChatId, msg.chatTitle);
+      const conversationId = getOrCreateConversation(msg.channelId, msg.externalChatId, msg.chatTitle);
 
-    channelManagerEvents.emit('message:incoming', {
-      channelId: msg.channelId,
-      channelType: msg.channelType,
-      sender: msg.sender,
-      text: msg.text.slice(0, 200),
-    });
-
-    try {
-      // Resolve agent config from group (or use global defaults)
-      const agentConfig = resolveAgentConfig(msg.channelId, getSystemPrompt());
-
-      // Check budget limits if group is assigned
-      if (agentConfig.groupId) {
-        const budgetError = checkGroupBudget(agentConfig.groupId);
-        if (budgetError) {
-          console.warn(`[manager] Budget exceeded for group ${agentConfig.groupId}: ${budgetError}`);
-          await adapter.sendMessage(msg.externalChatId, `Budget limit reached: ${budgetError}`);
-          return;
-        }
-      }
-
-      const reply = await processMessage(
-        conversationId,
-        msg.text,
-        msg.channelType,
-        msg.sender,
-        enabledTools,
-        agentConfig,
-      );
-      await adapter.sendMessage(msg.externalChatId, reply);
-
-      channelManagerEvents.emit('message:reply', {
+      channelManagerEvents.emit('message:incoming', {
         channelId: msg.channelId,
         channelType: msg.channelType,
-        replyLength: reply.length,
-        groupId: agentConfig.groupId,
+        sender: msg.sender,
+        text: msg.text.slice(0, 200),
       });
-    } catch (err) {
-      console.error(`[manager] Failed to process/reply:`, err);
+
       try {
-        await adapter.sendMessage(
-          msg.externalChatId,
-          'Sorry, an error occurred while processing your message. Please try again.',
+        // Resolve agent config from group (or use global defaults)
+        const agentConfig = resolveAgentConfig(msg.channelId, getSystemPrompt());
+
+        // Check budget limits if group is assigned
+        if (agentConfig.groupId) {
+          const budgetError = checkGroupBudget(agentConfig.groupId);
+          if (budgetError) {
+            console.warn(`[manager] Budget exceeded for group ${agentConfig.groupId}: ${budgetError}`);
+            await adapter.sendMessage(msg.externalChatId, `Budget limit reached: ${budgetError}`);
+            return;
+          }
+        }
+
+        const reply = await processMessage(
+          conversationId,
+          msg.text,
+          msg.channelType,
+          msg.sender,
+          enabledTools,
+          agentConfig,
         );
-      } catch {
-        // ignore send failure
+        await adapter.sendMessage(msg.externalChatId, reply);
+
+        channelManagerEvents.emit('message:reply', {
+          channelId: msg.channelId,
+          channelType: msg.channelType,
+          replyLength: reply.length,
+          groupId: agentConfig.groupId,
+        });
+      } catch (err) {
+        console.error(`[manager] Failed to process/reply:`, err);
+        try {
+          await adapter.sendMessage(
+            msg.externalChatId,
+            'Sorry, an error occurred while processing your message. Please try again.',
+          );
+        } catch {
+          // ignore send failure
+        }
       }
-    }
+    })();
   });
 
   // Forward status changes
@@ -223,18 +234,20 @@ async function startChannel(ch: ChannelRow): Promise<void> {
   });
 
   // Forward WhatsApp QR codes (convert raw string to data URL)
-  adapter.on('qr', async (qr: string) => {
-    try {
-      const dataUrl = await QRCode.toDataURL(qr, { width: 256, margin: 2 });
-      // Store data URL on adapter so it's available via getStatusInfo()
-      if (adapter instanceof WhatsAppAdapter) {
-        adapter.setQrDataUrl(dataUrl);
+  adapter.on('qr', (qr: string) => {
+    void (async () => {
+      try {
+        const dataUrl = await QRCode.toDataURL(qr, { width: 256, margin: 2 });
+        // Store data URL on adapter so it's available via getStatusInfo()
+        if (adapter instanceof WhatsAppAdapter) {
+          adapter.setQrDataUrl(dataUrl);
+        }
+        channelManagerEvents.emit('whatsapp:qr', { channelId: ch.id, qr: dataUrl });
+      } catch (err) {
+        console.error(`[manager] Failed to generate QR code:`, err);
+        channelManagerEvents.emit('whatsapp:qr', { channelId: ch.id, qr: '' });
       }
-      channelManagerEvents.emit('whatsapp:qr', { channelId: ch.id, qr: dataUrl });
-    } catch (err) {
-      console.error(`[manager] Failed to generate QR code:`, err);
-      channelManagerEvents.emit('whatsapp:qr', { channelId: ch.id, qr: '' });
-    }
+    })();
   });
 
   adapters.set(ch.id, adapter);

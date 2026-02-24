@@ -16,13 +16,18 @@ const SKILLS_DIR = path.join(config.dataDir, 'skills');
 const BUILTIN_SKILLS: SkillManifest[] = [
   {
     name: 'web_browse',
-    description: 'Browse web pages using a real browser (Playwright/Chromium). Supports navigating to URLs, extracting page content, clicking elements, filling forms, and executing JavaScript.',
+    description:
+      'Browse web pages using a real browser (Playwright/Chromium). Supports navigating to URLs, extracting page content, clicking elements, filling forms, and executing JavaScript.',
     version: '1.0.0',
     inputSchema: {
       type: 'object',
       properties: {
         url: { type: 'string', description: 'The URL to navigate to' },
-        action: { type: 'string', enum: ['get_content', 'click', 'fill', 'evaluate'], description: 'Action to perform after navigation. Default: get_content' },
+        action: {
+          type: 'string',
+          enum: ['get_content', 'click', 'fill', 'evaluate'],
+          description: 'Action to perform after navigation. Default: get_content',
+        },
         selector: { type: 'string', description: 'CSS selector for click/fill actions' },
         value: { type: 'string', description: 'Value for fill action' },
         javascript: { type: 'string', description: 'JavaScript code to evaluate on the page (for evaluate action)' },
@@ -35,7 +40,8 @@ const BUILTIN_SKILLS: SkillManifest[] = [
   },
   {
     name: 'run_script',
-    description: 'Execute a shell command or script and return its stdout/stderr output. Runs in the server environment with a configurable timeout.',
+    description:
+      'Execute a shell command or script and return its stdout/stderr output. Runs in the server environment with a configurable timeout.',
     version: '1.0.0',
     inputSchema: {
       type: 'object',
@@ -51,13 +57,18 @@ const BUILTIN_SKILLS: SkillManifest[] = [
   },
   {
     name: 'http_request',
-    description: 'Make HTTP requests to APIs and web services. Supports GET, POST, PUT, PATCH, DELETE methods with custom headers and JSON/text bodies.',
+    description:
+      'Make HTTP requests to APIs and web services. Supports GET, POST, PUT, PATCH, DELETE methods with custom headers and JSON/text bodies.',
     version: '1.0.0',
     inputSchema: {
       type: 'object',
       properties: {
         url: { type: 'string', description: 'The URL to send the request to' },
-        method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'], description: 'HTTP method (default: GET)' },
+        method: {
+          type: 'string',
+          enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
+          description: 'HTTP method (default: GET)',
+        },
         headers: { type: 'object', description: 'Request headers as key-value pairs' },
         body: { type: 'string', description: 'Request body (for POST/PUT/PATCH)' },
         timeout_ms: { type: 'number', description: 'Request timeout in milliseconds (default: 30000)' },
@@ -92,14 +103,8 @@ export function exportBuiltinSkills(): void {
     // Only create if not exists (don't overwrite user modifications)
     if (!fs.existsSync(skillDir)) {
       fs.mkdirSync(skillDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(skillDir, 'skill.json'),
-        JSON.stringify(skill, null, 2),
-      );
-      fs.writeFileSync(
-        path.join(skillDir, 'handler.js'),
-        BUILTIN_HANDLER_STUB,
-      );
+      fs.writeFileSync(path.join(skillDir, 'skill.json'), JSON.stringify(skill, null, 2));
+      fs.writeFileSync(path.join(skillDir, 'handler.js'), BUILTIN_HANDLER_STUB);
       console.log(`[skills] Exported built-in skill: ${skill.name}`);
     }
   }

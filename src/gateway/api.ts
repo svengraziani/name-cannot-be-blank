@@ -1,17 +1,6 @@
 import { Router, Request, Response } from 'express';
-import {
-  createChannel,
-  updateChannel,
-  removeChannel,
-  getChannelStatuses,
-} from '../channels/manager';
-import {
-  getRecentRuns,
-  getUsageSummary,
-  getUsageDaily,
-  getUsageByModel,
-  getRecentApiCalls,
-} from '../db/sqlite';
+import { createChannel, updateChannel, removeChannel, getChannelStatuses } from '../channels/manager';
+import { getRecentRuns, getUsageSummary, getUsageDaily, getUsageByModel, getRecentApiCalls } from '../db/sqlite';
 import {
   createAndStartTask,
   startTaskLoop,
@@ -24,19 +13,8 @@ import {
 import { getContainerStats } from '../agent/container-runner';
 import { isContainerMode } from '../agent/loop';
 import { toolRegistry } from '../agent/tools';
-import {
-  login,
-  logout,
-  setupAdmin,
-  isSetupRequired,
-} from '../auth/middleware';
-import {
-  getAllSkills,
-  toggleSkill,
-  deleteSkill,
-  installSkill,
-  updateSkill,
-} from '../agent/skills';
+import { login, logout, setupAdmin, isSetupRequired } from '../auth/middleware';
+import { getAllSkills, toggleSkill, deleteSkill, installSkill, updateSkill } from '../agent/skills';
 import {
   createAgentGroup,
   getAllAgentGroups,
@@ -281,7 +259,7 @@ export function createApiRouter(): Router {
   // ==================== Tools ====================
 
   router.get('/tools', (_req: Request, res: Response) => {
-    const tools = toolRegistry.getAll().map(t => ({
+    const tools = toolRegistry.getAll().map((t) => ({
       name: t.name,
       description: t.description,
     }));
@@ -374,7 +352,7 @@ export function createApiRouter(): Router {
     try {
       const groups = getAllAgentGroups();
       // Strip encrypted API keys from response
-      const safe = groups.map(g => ({
+      const safe = groups.map((g) => ({
         ...g,
         apiKeyEncrypted: undefined,
         hasApiKey: !!g.apiKeyEncrypted,
@@ -389,10 +367,19 @@ export function createApiRouter(): Router {
   router.post('/agent-groups', (req: Request, res: Response) => {
     try {
       const {
-        name, description, systemPrompt, apiKey,
-        model, maxTokens, skills, roles,
-        containerMode, maxConcurrentAgents,
-        budgetMaxTokensDay, budgetMaxTokensMonth, budgetAlertThreshold,
+        name,
+        description,
+        systemPrompt,
+        apiKey,
+        model,
+        maxTokens,
+        skills,
+        roles,
+        containerMode,
+        maxConcurrentAgents,
+        budgetMaxTokensDay,
+        budgetMaxTokensMonth,
+        budgetAlertThreshold,
       } = req.body;
 
       if (!name || !systemPrompt) {
@@ -401,10 +388,19 @@ export function createApiRouter(): Router {
       }
 
       const group = createAgentGroup({
-        name, description, systemPrompt, apiKey,
-        model, maxTokens, skills, roles,
-        containerMode, maxConcurrentAgents,
-        budgetMaxTokensDay, budgetMaxTokensMonth, budgetAlertThreshold,
+        name,
+        description,
+        systemPrompt,
+        apiKey,
+        model,
+        maxTokens,
+        skills,
+        roles,
+        containerMode,
+        maxConcurrentAgents,
+        budgetMaxTokensDay,
+        budgetMaxTokensMonth,
+        budgetAlertThreshold,
       });
 
       res.json({
@@ -528,7 +524,7 @@ export function createApiRouter(): Router {
 
   router.get('/scheduler/jobs', (_req: Request, res: Response) => {
     try {
-      const jobs = getAllJobs().map(j => ({
+      const jobs = getAllJobs().map((j) => ({
         ...j,
         triggerDescription: formatTriggerDescription(j.trigger),
       }));
@@ -607,7 +603,7 @@ export function createApiRouter(): Router {
 
   router.post('/scheduler/jobs/:id/run', async (req: Request, res: Response) => {
     try {
-      executeJob(req.params.id as string);
+      void executeJob(req.params.id as string);
       res.json({ status: 'triggered' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -659,7 +655,7 @@ export function createApiRouter(): Router {
 
   router.post('/scheduler/calendars/:id/sync', async (req: Request, res: Response) => {
     try {
-      const source = getAllCalendarSources().find(s => s.id === req.params.id);
+      const source = getAllCalendarSources().find((s) => s.id === req.params.id);
       if (!source) {
         res.status(404).json({ error: 'Calendar source not found' });
         return;

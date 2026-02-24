@@ -41,12 +41,12 @@ export function startScheduler(): void {
  * Stop the scheduler engine.
  */
 export function stopScheduler(): void {
-  for (const [id, task] of activeCronTasks) {
-    task.stop();
+  for (const [_id, task] of activeCronTasks) {
+    void task.stop();
   }
   activeCronTasks.clear();
 
-  for (const [id, timer] of activeTimers) {
+  for (const [_id, timer] of activeTimers) {
     if (typeof timer === 'object' && 'unref' in timer) {
       clearTimeout(timer as ReturnType<typeof setTimeout>);
       clearInterval(timer as ReturnType<typeof setInterval>);
@@ -77,7 +77,13 @@ export function scheduleJob(jobId: string): void {
       if (!cronExpr) break;
 
       const options = { timezone: trigger.timezone || 'UTC' };
-      const task = cron.schedule(cronExpr, () => executeJob(jobId), options);
+      const task = cron.schedule(
+        cronExpr,
+        () => {
+          void executeJob(jobId);
+        },
+        options,
+      );
       activeCronTasks.set(jobId, task);
 
       // Calculate next run
@@ -92,7 +98,12 @@ export function scheduleJob(jobId: string): void {
 
     case 'interval': {
       const minutes = trigger.intervalMinutes || 30;
-      const interval = setInterval(() => executeJob(jobId), minutes * 60 * 1000);
+      const interval = setInterval(
+        () => {
+          void executeJob(jobId);
+        },
+        minutes * 60 * 1000,
+      );
       activeTimers.set(jobId, interval);
 
       const nextRun = new Date(Date.now() + minutes * 60 * 1000);
@@ -108,9 +119,11 @@ export function scheduleJob(jobId: string): void {
       const delay = runAt.getTime() - Date.now();
       if (delay <= 0) {
         console.log(`[scheduler] One-time job "${job.name}" already past, running now`);
-        executeJob(jobId);
+        void executeJob(jobId);
       } else {
-        const timer = setTimeout(() => executeJob(jobId), delay);
+        const timer = setTimeout(() => {
+          void executeJob(jobId);
+        }, delay);
         activeTimers.set(jobId, timer);
         updateJob(jobId, { nextRunAt: runAt.toISOString() });
         console.log(`[scheduler] Scheduled one-time job "${job.name}": ${trigger.runAt}`);
@@ -131,7 +144,7 @@ export function scheduleJob(jobId: string): void {
 export function unscheduleJob(jobId: string): void {
   const cronTask = activeCronTasks.get(jobId);
   if (cronTask) {
-    cronTask.stop();
+    void cronTask.stop();
     activeCronTasks.delete(jobId);
   }
 
@@ -162,7 +175,7 @@ export async function executeJob(jobId: string): Promise<void> {
     // Build the prompt with template variables
     let prompt = job.action.prompt;
     const now = new Date();
-    prompt = prompt.replace(/\{\{date\}\}/g, now.toISOString().split('T')[0]);
+    prompt = prompt.replace(/\{\{date\}\}/g, now.toISOString().split('T')[0] ?? '');
     prompt = prompt.replace(/\{\{time\}\}/g, now.toTimeString().slice(0, 5));
     prompt = prompt.replace(/\{\{datetime\}\}/g, now.toISOString());
 
@@ -177,10 +190,7 @@ export async function executeJob(jobId: string): Promise<void> {
     const agentConfig = resolveAgentConfig('scheduler', getSystemPrompt());
     // Override with job-specific group if set
     if (job.action.agentGroupId) {
-      const { resolveAgentConfig: resolve } = await import('../agent/groups/resolver');
-      // We need to resolve for the group directly
-      const { getAgentGroup } = await import('../agent/groups/manager');
-      const { getGroupApiKey } = await import('../agent/groups/manager');
+      const { getAgentGroup, getGroupApiKey } = await import('../agent/groups/manager');
       const group = getAgentGroup(job.action.agentGroupId);
       if (group) {
         agentConfig.systemPrompt = group.systemPrompt;

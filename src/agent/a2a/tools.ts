@@ -52,7 +52,10 @@ export const delegateTaskTool: AgentTool = {
     const context = input.context as string | undefined;
 
     if (!currentContext.groupId) {
-      return { content: 'Error: A2A context not initialized. delegate_task requires an agent group context.', isError: true };
+      return {
+        content: 'Error: A2A context not initialized. delegate_task requires an agent group context.',
+        isError: true,
+      };
     }
 
     try {
@@ -75,7 +78,8 @@ export const delegateTaskTool: AgentTool = {
 
 export const broadcastEventTool: AgentTool = {
   name: 'broadcast_event',
-  description: 'Broadcast an event to all active agents in the current group. Use for sharing status updates, completion notifications, or coordination signals.',
+  description:
+    'Broadcast an event to all active agents in the current group. Use for sharing status updates, completion notifications, or coordination signals.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -111,14 +115,15 @@ export const broadcastEventTool: AgentTool = {
       },
     });
 
-    const activeCount = getActiveAgents().filter(a => a.groupId === currentContext.groupId).length;
+    const activeCount = getActiveAgents().filter((a) => a.groupId === currentContext.groupId).length;
     return { content: `Event "${event}" broadcast to ${activeCount} active agent(s).` };
   },
 };
 
 export const queryAgentsTool: AgentTool = {
   name: 'query_agents',
-  description: 'Query available agent roles and currently active agents. Use to understand what capabilities are available before delegating tasks.',
+  description:
+    'Query available agent roles and currently active agents. Use to understand what capabilities are available before delegating tasks.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -135,15 +140,13 @@ export const queryAgentsTool: AgentTool = {
     const agents = getActiveAgents();
     const stats = getSubAgentStats();
 
-    const roles = filterRole
-      ? PREDEFINED_ROLES.filter(r => r.id === filterRole)
-      : PREDEFINED_ROLES;
+    const roles = filterRole ? PREDEFINED_ROLES.filter((r) => r.id === filterRole) : PREDEFINED_ROLES;
 
     const lines = [
       '## Available Roles',
       '',
-      ...roles.map(r => {
-        const activeCount = agents.filter(a => a.role === r.id).length;
+      ...roles.map((r) => {
+        const activeCount = agents.filter((a) => a.role === r.id).length;
         return `- **${r.name}** (${r.id}): ${r.systemPrompt.slice(0, 100)}... | Tools: [${r.tools.join(', ')}] | Active: ${activeCount}/${r.maxConcurrent}`;
       }),
       '',

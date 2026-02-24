@@ -84,7 +84,10 @@ function validateManifest(manifest: unknown, dirName: string): manifest is Skill
  * Load a handler.js file and return an execute function.
  * For built-in skills, we use require(). For custom skills, we'll add sandbox later.
  */
-function loadHandler(handlerPath: string, _sandbox: boolean): ((input: Record<string, unknown>) => Promise<ToolResult>) | null {
+function loadHandler(
+  handlerPath: string,
+  _sandbox: boolean,
+): ((input: Record<string, unknown>) => Promise<ToolResult>) | null {
   try {
     // For now, all handlers are loaded via require/import
     // Custom skill sandboxing (isolated-vm) will be added in a later phase
@@ -218,7 +221,7 @@ export function getAllSkills(): Array<{
   containerCompatible: boolean;
 }> {
   const skills = scanSkills();
-  return skills.map(s => ({
+  return skills.map((s) => ({
     name: s.manifest.name,
     description: s.manifest.description,
     version: s.manifest.version || '1.0.0',
@@ -290,7 +293,10 @@ export function installSkill(manifest: SkillManifest, handlerContent: string): v
 /**
  * Update an existing skill's manifest and/or handler.
  */
-export function updateSkill(name: string, updates: { manifest?: Partial<SkillManifest>; handlerContent?: string }): void {
+export function updateSkill(
+  name: string,
+  updates: { manifest?: Partial<SkillManifest>; handlerContent?: string },
+): void {
   const skill = loadedSkills.get(name);
   if (!skill) {
     // Try to find it on disk

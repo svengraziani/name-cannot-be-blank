@@ -5,12 +5,18 @@
  * Phase 2: CalDAV/Google Calendar API for write access (future)
  */
 
-import { getAllCalendarSources, updateCalendarSyncTime, upsertCalendarEvent, getUpcomingEvents, ensureCalendarEventsUniqueIndex } from './db';
+import {
+  getAllCalendarSources,
+  updateCalendarSyncTime,
+  upsertCalendarEvent,
+  getUpcomingEvents,
+  ensureCalendarEventsUniqueIndex,
+} from './db';
 import { EventEmitter } from 'events';
 
 export const calendarEvents = new EventEmitter();
 
-let pollingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
+const pollingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
 
 /**
  * Start polling all calendar sources.
@@ -36,16 +42,19 @@ export function scheduleCalendarPoll(id: string, url: string, intervalMinutes: n
   }
 
   // Poll immediately
-  syncCalendar(id, url).catch(err => {
+  void syncCalendar(id, url).catch((err) => {
     console.error(`[calendar] Initial sync failed for ${id}:`, err);
   });
 
   // Then poll periodically
-  const interval = setInterval(() => {
-    syncCalendar(id, url).catch(err => {
-      console.error(`[calendar] Sync failed for ${id}:`, err);
-    });
-  }, intervalMinutes * 60 * 1000);
+  const interval = setInterval(
+    () => {
+      void syncCalendar(id, url).catch((err) => {
+        console.error(`[calendar] Sync failed for ${id}:`, err);
+      });
+    },
+    intervalMinutes * 60 * 1000,
+  );
 
   pollingIntervals.set(id, interval);
 }
@@ -64,7 +73,7 @@ export function stopCalendarPoll(id: string): void {
  * Stop all calendar polling.
  */
 export function stopAllCalendarPolling(): void {
-  for (const [id, interval] of pollingIntervals) {
+  for (const [_id, interval] of pollingIntervals) {
     clearInterval(interval);
   }
   pollingIntervals.clear();

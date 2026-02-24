@@ -1,13 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import * as fs from 'fs';
 import { config } from '../config';
-import {
-  getConversationMessages,
-  addMessage,
-  createAgentRun,
-  updateAgentRun,
-  logApiCall,
-} from '../db/sqlite';
+import { getConversationMessages, addMessage, createAgentRun, updateAgentRun, logApiCall } from '../db/sqlite';
 import { runInContainer, checkContainerRuntime, ContainerInput } from './container-runner';
 import { toolRegistry } from './tools';
 import { EventEmitter } from 'events';
@@ -109,7 +103,7 @@ export async function processMessage(
 
     // Build conversation context
     const history = getConversationMessages(conversationId, 40);
-    const messages: Anthropic.MessageParam[] = history.map(m => ({
+    const messages: Anthropic.MessageParam[] = history.map((m) => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
     }));
@@ -134,9 +128,23 @@ export async function processMessage(
     const startTime = Date.now();
 
     if (useContainer && containerAvailable) {
-      response = await callAgentContainer(messages, effectiveSystemPrompt, effectiveModel, effectiveMaxTokens, effectiveApiKey);
+      response = await callAgentContainer(
+        messages,
+        effectiveSystemPrompt,
+        effectiveModel,
+        effectiveMaxTokens,
+        effectiveApiKey,
+      );
     } else {
-      response = await callAgentDirect(messages, effectiveTools, runId, effectiveSystemPrompt, effectiveModel, effectiveMaxTokens, effectiveApiKey);
+      response = await callAgentDirect(
+        messages,
+        effectiveTools,
+        runId,
+        effectiveSystemPrompt,
+        effectiveModel,
+        effectiveMaxTokens,
+        effectiveApiKey,
+      );
     }
 
     const durationMs = Date.now() - startTime;
@@ -222,10 +230,8 @@ async function callAgentDirect(
 
     // If no tool use, extract text and return
     if (response.stop_reason !== 'tool_use') {
-      const textBlocks = response.content.filter(
-        (b): b is Anthropic.TextBlock => b.type === 'text'
-      );
-      const content = textBlocks.map(b => b.text).join('\n');
+      const textBlocks = response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text');
+      const content = textBlocks.map((b) => b.text).join('\n');
 
       return {
         content: content || '(no response)',
@@ -299,7 +305,7 @@ async function callAgentContainer(
   overrideApiKey?: string,
 ): Promise<AgentResponse> {
   // Container mode only supports simple text messages (no tool blocks)
-  const simpleMessages = messages.map(m => ({
+  const simpleMessages = messages.map((m) => ({
     role: m.role,
     content: typeof m.content === 'string' ? m.content : '(tool interaction)',
   }));
