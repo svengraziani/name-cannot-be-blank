@@ -1,4 +1,5 @@
 import { v4 as uuid } from 'uuid';
+import QRCode from 'qrcode';
 import { ChannelAdapter, IncomingMessage } from './base';
 import { TelegramAdapter, TelegramConfig } from './telegram';
 import { WhatsAppAdapter } from './whatsapp';
@@ -183,9 +184,19 @@ async function startChannel(ch: ChannelRow): Promise<void> {
     channelManagerEvents.emit('channel:status', statusUpdate);
   });
 
-  // Forward WhatsApp QR codes
-  adapter.on('qr', (qr: string) => {
-    channelManagerEvents.emit('whatsapp:qr', { channelId: ch.id, qr });
+  // Forward WhatsApp QR codes (convert raw string to data URL)
+  adapter.on('qr', async (qr: string) => {
+    try {
+      const dataUrl = await QRCode.toDataURL(qr, { width: 256, margin: 2 });
+      // Store data URL on adapter so it's available via getStatusInfo()
+      if (adapter instanceof WhatsAppAdapter) {
+        adapter.setQrDataUrl(dataUrl);
+      }
+      channelManagerEvents.emit('whatsapp:qr', { channelId: ch.id, qr: dataUrl });
+    } catch (err) {
+      console.error(`[manager] Failed to generate QR code:`, err);
+      channelManagerEvents.emit('whatsapp:qr', { channelId: ch.id, qr: '' });
+    }
   });
 
   adapters.set(ch.id, adapter);

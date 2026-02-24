@@ -459,7 +459,18 @@
 
     // === Dashboard ===
     async function refreshChannels() {
-      try { const res = await apiFetch('/api/channels'); channels = await res.json(); renderChannels(); updateDashboardStats(); } catch {}
+      try {
+        const res = await apiFetch('/api/channels');
+        channels = await res.json();
+        renderChannels();
+        updateDashboardStats();
+        // Check if any WhatsApp channel has a pending QR code
+        for (const ch of channels) {
+          if (ch.type === 'whatsapp' && ch.statusInfo && ch.statusInfo.qrDataUrl) {
+            showQr(ch.statusInfo.qrDataUrl);
+          }
+        }
+      } catch {}
     }
 
     function renderChannels() {
@@ -500,7 +511,17 @@
       try { await apiFetch('/api/channels', { method:'POST', body:JSON.stringify({type,name,config}) }); closeModal('addChannelModal'); refreshChannels(); } catch(e) { alert('Error: '+e.message); }
     }
 
-    function showQr(qrData) { document.getElementById('qrSection').style.display='block'; document.getElementById('qrCanvas').innerHTML = `<pre style="font-size:6px;line-height:6px;color:#000;font-family:monospace;">${escHtml(qrData)}</pre>`; }
+    function showQr(qrData) {
+      document.getElementById('qrSection').style.display = 'block';
+      const container = document.getElementById('qrCanvas');
+      if (qrData && qrData.startsWith('data:image/')) {
+        container.innerHTML = `<img src="${qrData}" alt="WhatsApp QR Code" style="display:block;width:256px;height:256px;" />`;
+      } else if (qrData) {
+        container.innerHTML = `<pre style="font-size:6px;line-height:6px;color:#000;font-family:monospace;">${escHtml(qrData)}</pre>`;
+      } else {
+        container.innerHTML = '<p style="color:var(--text2);">Failed to generate QR code</p>';
+      }
+    }
 
     // === Usage Tab ===
     async function refreshUsage() {

@@ -6,6 +6,7 @@ type WASocket = any;
 export class WhatsAppAdapter extends ChannelAdapter {
   private sock?: WASocket;
   private _qrCode?: string;
+  private _qrDataUrl?: string;
 
   constructor(channelId: string) {
     super(channelId, 'whatsapp');
@@ -44,6 +45,7 @@ export class WhatsAppAdapter extends ChannelAdapter {
 
         if (connection === 'open') {
           this._qrCode = undefined;
+          this._qrDataUrl = undefined;
           this.setStatus('connected');
           console.log(`[whatsapp:${this.channelId}] Connected`);
         }
@@ -105,9 +107,15 @@ export class WhatsAppAdapter extends ChannelAdapter {
     await this.sock.sendMessage(externalChatId, { text });
   }
 
+  /** Store the data URL after conversion by the manager */
+  setQrDataUrl(dataUrl: string): void {
+    this._qrDataUrl = dataUrl;
+  }
+
   getStatusInfo(): Record<string, unknown> {
     return {
       qrCode: this._qrCode,
+      qrDataUrl: this._qrDataUrl,
     };
   }
 }
