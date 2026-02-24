@@ -25,11 +25,9 @@ class ToolRegistry {
    * Get Anthropic-compatible tool definitions, optionally filtered to a set of enabled tool names.
    */
   getToolDefinitions(enabledTools?: string[]): Anthropic.Tool[] {
-    const tools = enabledTools
-      ? this.getAll().filter(t => enabledTools.includes(t.name))
-      : this.getAll();
+    const tools = enabledTools ? this.getAll().filter((t) => enabledTools.includes(t.name)) : this.getAll();
 
-    return tools.map(t => ({
+    return tools.map((t) => ({
       name: t.name,
       description: t.description,
       input_schema: t.inputSchema,

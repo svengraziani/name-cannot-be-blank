@@ -144,7 +144,11 @@ export const webBrowseTool: AgentTool = {
       return { content: `web_browse error: ${msg}`, isError: true };
     } finally {
       if (page) {
-        try { await page.close(); } catch {}
+        try {
+          await page.close();
+        } catch {
+          /* ignored */
+        }
       }
     }
   },

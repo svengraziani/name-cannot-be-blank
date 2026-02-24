@@ -70,7 +70,9 @@ export class EmailAdapter extends ChannelAdapter {
 
       // Start polling for new emails
       await this.pollEmails();
-      this.pollTimer = setInterval(() => this.pollEmails(), this.conf.pollIntervalMs);
+      this.pollTimer = setInterval(() => {
+        void this.pollEmails();
+      }, this.conf.pollIntervalMs);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.setStatus('error', msg);
@@ -127,30 +129,32 @@ export class EmailAdapter extends ChannelAdapter {
 
       fetch.on('message', (msg: any) => {
         msg.on('body', (stream: NodeJS.ReadableStream) => {
-          simpleParser(stream as any).then((parsed) => {
-            const from = parsed.from?.value?.[0]?.address || '';
-            const text = parsed.text || '';
+          simpleParser(stream as any)
+            .then((parsed) => {
+              const from = parsed.from?.value?.[0]?.address || '';
+              const text = parsed.text || '';
 
-            if (!text) return;
+              if (!text) return;
 
-            // Filter by allowed senders
-            if (this.conf.allowedSenders.length > 0 && !this.conf.allowedSenders.includes(from)) {
-              return;
-            }
+              // Filter by allowed senders
+              if (this.conf.allowedSenders.length > 0 && !this.conf.allowedSenders.includes(from)) {
+                return;
+              }
 
-            const incoming: IncomingMessage = {
-              channelId: this.channelId,
-              channelType: 'email',
-              externalChatId: from,
-              sender: parsed.from?.value?.[0]?.name || from,
-              text,
-              chatTitle: parsed.subject || undefined,
-            };
+              const incoming: IncomingMessage = {
+                channelId: this.channelId,
+                channelType: 'email',
+                externalChatId: from,
+                sender: parsed.from?.value?.[0]?.name || from,
+                text,
+                chatTitle: parsed.subject || undefined,
+              };
 
-            this.emit('message', incoming);
-          }).catch((err) => {
-            console.error(`[email:${this.channelId}] Parse error:`, err);
-          });
+              this.emit('message', incoming);
+            })
+            .catch((err) => {
+              console.error(`[email:${this.channelId}] Parse error:`, err);
+            });
         });
       });
     } catch (err) {
@@ -158,7 +162,7 @@ export class EmailAdapter extends ChannelAdapter {
     }
   }
 
-  getStatusInfo(): Record<string, unknown> {
+  override getStatusInfo(): Record<string, unknown> {
     return {
       imapHost: this.conf.imapHost,
       smtpHost: this.conf.smtpHost,

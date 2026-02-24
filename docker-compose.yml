@@ -11,6 +11,7 @@ services:
       - .env
     volumes:
       - gateway-data:/data
+      - skills-data:/data/skills
       - ./system-prompt.md:/data/system-prompt.md:ro
       # Mount Docker socket for container isolation mode (optional)
       # Only needed if AGENT_CONTAINER_MODE=true
@@ -22,9 +23,13 @@ services:
   agent-runner:
     build: ./agent-runner
     image: loop-gateway-agent:latest
+    volumes:
+      - skills-data:/skills:ro  # Skills available to agent containers (read-only)
     profiles:
       - build-agent  # Only built when explicitly requested
 
 volumes:
   gateway-data:
+    driver: local
+  skills-data:
     driver: local

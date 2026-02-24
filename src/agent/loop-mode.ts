@@ -52,11 +52,7 @@ function getClient(): Anthropic {
 /**
  * Create and start a new loop task.
  */
-export function createAndStartTask(opts: {
-  name: string;
-  promptContent: string;
-  maxIterations?: number;
-}): number {
+export function createAndStartTask(opts: { name: string; promptContent: string; maxIterations?: number }): number {
   ensureDirs();
 
   const safeName = opts.name.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -90,14 +86,16 @@ export function startTaskLoop(taskId: number): void {
   let cancelled = false;
 
   activeLoops.set(taskId, {
-    cancel: () => { cancelled = true; },
+    cancel: () => {
+      cancelled = true;
+    },
   });
 
   updateLoopTask(taskId, { status: 'running' });
   loopEvents.emit('task:start', { taskId, name: task.name });
 
   // Run the loop asynchronously
-  (async () => {
+  void (async () => {
     try {
       let iteration = task.iteration;
 
@@ -134,8 +132,8 @@ export function startTaskLoop(taskId: number): void {
         });
 
         const durationMs = Date.now() - startTime;
-        const textBlocks = response.content.filter(b => b.type === 'text');
-        const output = textBlocks.map(b => b.text).join('\n');
+        const textBlocks = response.content.filter((b) => b.type === 'text');
+        const output = textBlocks.map((b) => b.text).join('\n');
 
         // Log API call
         logApiCall({
@@ -169,7 +167,7 @@ export function startTaskLoop(taskId: number): void {
 
         // Small delay between iterations
         if (!cancelled) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }
 

@@ -25,7 +25,8 @@ export const httpRequestTool: AgentTool = {
       },
       body: {
         type: 'string',
-        description: 'Request body (for POST/PUT/PATCH). If Content-Type is application/json, this should be a JSON string.',
+        description:
+          'Request body (for POST/PUT/PATCH). If Content-Type is application/json, this should be a JSON string.',
       },
       timeout_ms: {
         type: 'number',
@@ -72,7 +73,9 @@ export const httpRequestTool: AgentTool = {
 
       // Collect response headers
       const respHeaders: Record<string, string> = {};
-      response.headers.forEach((v, k) => { respHeaders[k] = v; });
+      response.headers.forEach((v, k) => {
+        respHeaders[k] = v;
+      });
 
       const contentType = response.headers.get('content-type') || '';
       let responseBody: string;

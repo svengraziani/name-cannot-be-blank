@@ -1,13 +1,16 @@
 import express from 'express';
 import expressWs from 'express-ws';
 import path from 'path';
-import { config } from '../config';
 import { createApiRouter } from './api';
 import { channelManagerEvents } from '../channels/manager';
 import { agentEvents } from '../agent/loop';
 import { containerEvents } from '../agent/container-runner';
 import { loopEvents } from '../agent/loop-mode';
 import { authMiddleware, rateLimitMiddleware } from '../auth/middleware';
+import { a2aEvents } from '../agent/a2a';
+import { schedulerEvents, calendarEvents } from '../scheduler';
+import { skillWatcherEvents } from '../agent/skills';
+import { approvalEvents, notifyApprovalRequired, notifyApprovalResolved } from '../agent/hitl';
 
 export function createServer() {
   const app = express();
@@ -45,7 +48,8 @@ export function createServer() {
     const payload = JSON.stringify({ event, data, ts: Date.now() });
     for (const ws of clients) {
       try {
-        if (ws.readyState === 1) { // OPEN
+        if (ws.readyState === 1) {
+          // OPEN
           ws.send(payload);
         }
       } catch {
@@ -76,6 +80,36 @@ export function createServer() {
   loopEvents.on('task:complete', (data) => broadcast('task:complete', data));
   loopEvents.on('task:error', (data) => broadcast('task:error', data));
   loopEvents.on('task:stop', (data) => broadcast('task:stop', data));
+
+  // Forward A2A events
+  a2aEvents.on('message:sent', (data) => broadcast('a2a:message', data));
+  a2aEvents.on('agent:registered', (data) => broadcast('a2a:agent:registered', data));
+  a2aEvents.on('agent:unregistered', (data) => broadcast('a2a:agent:unregistered', data));
+  a2aEvents.on('agent:spawned', (data) => broadcast('a2a:agent:spawned', data));
+  a2aEvents.on('agent:stopped', (data) => broadcast('a2a:agent:stopped', data));
+
+  // Forward scheduler events
+  schedulerEvents.on('job:start', (data) => broadcast('scheduler:job:start', data));
+  schedulerEvents.on('job:complete', (data) => broadcast('scheduler:job:complete', data));
+  schedulerEvents.on('job:error', (data) => broadcast('scheduler:job:error', data));
+
+  // Forward calendar events
+  calendarEvents.on('calendar:synced', (data) => broadcast('calendar:synced', data));
+  calendarEvents.on('calendar:error', (data) => broadcast('calendar:error', data));
+
+  // Forward skills watcher events
+  skillWatcherEvents.on('skills:reloaded', (data) => broadcast('skills:reloaded', data));
+
+  // Forward HITL approval events
+  approvalEvents.on('approval:required', (data) => {
+    broadcast('approval:required', data);
+    void notifyApprovalRequired(data);
+  });
+  approvalEvents.on('approval:resolved', (data) => {
+    broadcast('approval:resolved', data);
+    void notifyApprovalResolved(data);
+  });
+  approvalEvents.on('approval:timeout', (data) => broadcast('approval:timeout', data));
 
   // Fallback: serve UI for any non-API route
   app.get('*', (_req, res) => {

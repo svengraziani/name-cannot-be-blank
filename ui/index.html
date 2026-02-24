@@ -167,6 +167,10 @@
 
     <div class="tabs">
       <div class="tab active" onclick="switchTab('dashboard')">Dashboard</div>
+      <div class="tab" onclick="switchTab('groups')">Agent Groups</div>
+      <div class="tab" onclick="switchTab('skills')">Skills</div>
+      <div class="tab" onclick="switchTab('scheduler')">Scheduler</div>
+      <div class="tab" onclick="switchTab('approvals')">Approvals</div>
       <div class="tab" onclick="switchTab('usage')">Usage</div>
       <div class="tab" onclick="switchTab('tasks')">Loop Tasks</div>
     </div>
@@ -253,6 +257,98 @@
       </div>
     </div>
 
+    <!-- ===== AGENT GROUPS TAB ===== -->
+    <div class="tab-content" id="tab-groups">
+      <div class="container">
+        <div class="card full" style="margin-bottom:20px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h2 style="margin:0;">Agent Groups</h2>
+            <button class="btn primary sm" onclick="openAddGroup()">+ New Group</button>
+          </div>
+          <p style="color:var(--text2);font-size:13px;margin-bottom:16px;">Agent Groups let you define separate configurations (model, API key, budget, skills) per channel.</p>
+          <div id="groupList"><div class="empty-state"><p>No agent groups yet.</p><button class="btn primary" onclick="openAddGroup()">Create your first group</button></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SKILLS TAB ===== -->
+    <div class="tab-content" id="tab-skills">
+      <div class="container">
+        <div class="card full" style="margin-bottom:20px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h2 style="margin:0;">Skills</h2>
+            <button class="btn primary sm" onclick="openInstallSkill()">+ Install Skill</button>
+          </div>
+          <p style="color:var(--text2);font-size:13px;margin-bottom:16px;">Skills are tool plugins the agent can use. Built-in skills are always available, custom skills can be toggled.</p>
+          <div id="skillList"><div class="empty-state"><p>Loading skills...</p></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SCHEDULER TAB ===== -->
+    <div class="tab-content" id="tab-scheduler">
+      <div class="container">
+        <div class="grid">
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+              <h2 style="margin:0;">Scheduled Jobs</h2>
+              <button class="btn primary sm" onclick="openAddJob()">+ New Job</button>
+            </div>
+            <div id="jobList"><div class="empty-state"><p>No scheduled jobs yet.</p><button class="btn primary" onclick="openAddJob()">Create a scheduled job</button></div></div>
+          </div>
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+              <h2 style="margin:0;">Calendar Sources</h2>
+              <button class="btn primary sm" onclick="openAddCalendar()">+ Add Calendar</button>
+            </div>
+            <div id="calendarList"><div class="empty-state"><p>No calendars configured.</p><button class="btn primary" onclick="openAddCalendar()">Add iCal URL</button></div></div>
+          </div>
+        </div>
+        <div class="card full" style="margin-top:20px;">
+          <h2>Scheduler Stats</h2>
+          <div class="stats" id="schedulerStats">
+            <div class="stat"><div class="value" id="schedActiveJobs">0</div><div class="label">Active Jobs</div></div>
+            <div class="stat"><div class="value" id="schedCronJobs">0</div><div class="label">Cron Jobs</div></div>
+            <div class="stat"><div class="value" id="schedIntervalJobs">0</div><div class="label">Interval Jobs</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== APPROVALS TAB ===== -->
+    <div class="tab-content" id="tab-approvals">
+      <div class="container">
+        <div class="card full" style="margin-bottom:20px;">
+          <h2>Approval Stats</h2>
+          <div class="stats">
+            <div class="stat"><div class="value" id="approvalPending">0</div><div class="label">Pending</div></div>
+            <div class="stat"><div class="value" id="approvalApproved">0</div><div class="label">Approved</div></div>
+            <div class="stat"><div class="value" id="approvalRejected">0</div><div class="label">Rejected</div></div>
+            <div class="stat"><div class="value" id="approvalTimeout">0</div><div class="label">Timed Out</div></div>
+            <div class="stat"><div class="value" id="approvalAutoApproved">0</div><div class="label">Auto-Approved</div></div>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="card">
+            <h2>Pending Approvals</h2>
+            <div id="pendingApprovalList"><div class="empty-state" style="padding:20px;"><p>No pending approvals</p></div></div>
+          </div>
+          <div class="card">
+            <h2>Approval Rules</h2>
+            <p style="color:var(--text2);font-size:12px;margin-bottom:12px;">Configure which tools require human approval before execution.</p>
+            <div id="approvalRuleList"><div class="empty-state" style="padding:20px;"><p>Loading rules...</p></div></div>
+            <div style="margin-top:12px;">
+              <button class="btn primary sm" onclick="openAddRule()">+ Add Rule</button>
+            </div>
+          </div>
+        </div>
+        <div class="card full" style="margin-top:20px;">
+          <h2>Recent Approval History</h2>
+          <div id="approvalHistory" style="max-height:400px;overflow-y:auto;"><div class="empty-state" style="padding:20px;"><p>No approval history</p></div></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ===== TASKS TAB ===== -->
     <div class="tab-content" id="tab-tasks">
       <div class="container">
@@ -291,6 +387,103 @@
       <div class="form-group"><label>Prompt</label><textarea id="taskPrompt" placeholder="Describe the task for the agent to execute in a loop..."></textarea></div>
       <div class="form-group"><label>Max Iterations</label><input id="taskMaxIter" type="number" value="10" min="1" max="100" /></div>
       <div class="modal-actions"><button class="btn" onclick="closeModal('addTaskModal')">Cancel</button><button class="btn primary" onclick="submitTask()">Start Task</button></div>
+    </div>
+  </div>
+
+  <!-- Add Agent Group Modal -->
+  <div class="modal-overlay hidden" id="addGroupModal">
+    <div class="modal" style="max-width:560px;">
+      <h3 id="groupModalTitle">New Agent Group</h3>
+      <input type="hidden" id="groupEditId" />
+      <div class="form-group"><label>Name</label><input id="groupName" placeholder="e.g. Customer Support" /></div>
+      <div class="form-group"><label>Description</label><input id="groupDesc" placeholder="Optional description" /></div>
+      <div class="form-group"><label>Model</label><select id="groupModel"><option value="claude-sonnet-4-20250514">Claude Sonnet 4</option><option value="claude-haiku-4-20250414">Claude Haiku 4</option><option value="claude-opus-4-20250514">Claude Opus 4</option></select></div>
+      <div class="form-group"><label>Custom API Key (optional, leave blank for global key)</label><input id="groupApiKey" type="password" placeholder="sk-ant-..." /></div>
+      <div class="form-group"><label>Max Tokens</label><input id="groupMaxTokens" type="number" value="4096" min="256" max="200000" /></div>
+      <div class="form-group"><label>System Prompt (optional override)</label><textarea id="groupSystemPrompt" style="min-height:80px;" placeholder="Leave blank for global system prompt"></textarea></div>
+      <div class="form-group"><label>Daily Token Budget (0 = unlimited)</label><input id="groupBudgetDay" type="number" value="0" min="0" /></div>
+      <div class="form-group"><label>Monthly Token Budget (0 = unlimited)</label><input id="groupBudgetMonth" type="number" value="0" min="0" /></div>
+      <div class="form-group"><label>Assign to Channel</label><select id="groupChannelAssign"><option value="">-- None --</option></select></div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal('addGroupModal')">Cancel</button><button class="btn primary" onclick="submitGroup()">Save Group</button></div>
+    </div>
+  </div>
+
+  <!-- Install Skill Modal -->
+  <div class="modal-overlay hidden" id="installSkillModal">
+    <div class="modal">
+      <h3>Install Custom Skill</h3>
+      <div class="form-group"><label>Skill Name</label><input id="skillInstallName" placeholder="e.g. my_tool" /></div>
+      <div class="form-group"><label>skill.json Manifest</label><textarea id="skillInstallManifest" style="min-height:150px;font-family:monospace;font-size:12px;" placeholder='{"name":"my_tool","description":"...","version":"1.0.0","inputSchema":{"type":"object","properties":{}},"handler":"handler.js","containerCompatible":true}'></textarea></div>
+      <div class="form-group"><label>handler.js Code</label><textarea id="skillInstallHandler" style="min-height:100px;font-family:monospace;font-size:12px;" placeholder='module.exports = async function(input) { return { result: "hello" }; }'></textarea></div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal('installSkillModal')">Cancel</button><button class="btn primary" onclick="submitSkillInstall()">Install</button></div>
+    </div>
+  </div>
+
+  <!-- Add Scheduled Job Modal -->
+  <div class="modal-overlay hidden" id="addJobModal">
+    <div class="modal" style="max-width:560px;">
+      <h3>New Scheduled Job</h3>
+      <div class="form-group"><label>Job Name</label><input id="jobName" placeholder="e.g. Daily Report" /></div>
+      <div class="form-group"><label>Trigger Type</label><select id="jobTriggerType" onchange="updateJobForm()"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="interval">Interval</option><option value="once">Once</option></select></div>
+      <div id="jobTimeFields">
+        <div class="form-group"><label>Time (HH:MM)</label><input id="jobTime" type="time" value="09:00" /></div>
+      </div>
+      <div id="jobWeeklyFields" style="display:none;">
+        <div class="form-group"><label>Days</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" class="jobDay" value="1"> Mon</label>
+            <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" class="jobDay" value="2"> Tue</label>
+            <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" class="jobDay" value="3"> Wed</label>
+            <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" class="jobDay" value="4"> Thu</label>
+            <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" class="jobDay" value="5"> Fri</label>
+            <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" class="jobDay" value="6"> Sat</label>
+            <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" class="jobDay" value="0"> Sun</label>
+          </div>
+        </div>
+      </div>
+      <div id="jobIntervalFields" style="display:none;">
+        <div class="form-group"><label>Interval (minutes)</label><input id="jobInterval" type="number" value="30" min="1" /></div>
+      </div>
+      <div id="jobOnceFields" style="display:none;">
+        <div class="form-group"><label>Run At</label><input id="jobRunAt" type="datetime-local" /></div>
+      </div>
+      <div class="form-group"><label>Agent Prompt</label><textarea id="jobPrompt" placeholder="What should the agent do? Use {{date}}, {{time}} for variables."></textarea></div>
+      <div class="form-group"><label>Output Type</label><select id="jobOutputType" onchange="updateJobOutputForm()"><option value="channel">Channel</option><option value="webhook">Webhook</option><option value="file">File</option><option value="email">Email</option></select></div>
+      <div id="jobOutputChannelFields">
+        <div class="form-group"><label>Channel</label><select id="jobOutputChannel"></select></div>
+      </div>
+      <div id="jobOutputWebhookFields" style="display:none;">
+        <div class="form-group"><label>Webhook URL</label><input id="jobOutputWebhook" placeholder="https://..." /></div>
+      </div>
+      <div id="jobOutputEmailFields" style="display:none;">
+        <div class="form-group"><label>Email To</label><input id="jobOutputEmail" placeholder="user@example.com" /></div>
+      </div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal('addJobModal')">Cancel</button><button class="btn primary" onclick="submitJob()">Create Job</button></div>
+    </div>
+  </div>
+
+  <!-- Add Calendar Modal -->
+  <div class="modal-overlay hidden" id="addCalendarModal">
+    <div class="modal">
+      <h3>Add Calendar Source</h3>
+      <div class="form-group"><label>Name</label><input id="calName" placeholder="e.g. Team Calendar" /></div>
+      <div class="form-group"><label>iCal URL</label><input id="calUrl" placeholder="https://calendar.google.com/calendar/ical/..." /></div>
+      <div class="form-group"><label>Poll Interval (minutes)</label><input id="calInterval" type="number" value="15" min="1" /></div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal('addCalendarModal')">Cancel</button><button class="btn primary" onclick="submitCalendar()">Add Calendar</button></div>
+    </div>
+  </div>
+
+  <!-- Add Approval Rule Modal -->
+  <div class="modal-overlay hidden" id="addRuleModal">
+    <div class="modal">
+      <h3>Add Approval Rule</h3>
+      <div class="form-group"><label>Tool Name</label><select id="ruleToolName"></select></div>
+      <div class="form-group"><label>Risk Level</label><select id="ruleRiskLevel"><option value="low">Low</option><option value="medium">Medium</option><option value="high" selected>High</option><option value="critical">Critical</option></select></div>
+      <div class="form-group"><label>Require Approval</label><select id="ruleRequire"><option value="true">Yes</option><option value="false">No</option></select></div>
+      <div class="form-group"><label>Auto-Approve</label><select id="ruleAutoApprove"><option value="false">No</option><option value="true">Yes (skip approval)</option></select></div>
+      <div class="form-group"><label>Timeout (seconds)</label><input id="ruleTimeout" type="number" value="300" min="10" max="3600" /></div>
+      <div class="form-group"><label>On Timeout</label><select id="ruleTimeoutAction"><option value="reject">Reject</option><option value="approve">Approve</option></select></div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal('addRuleModal')">Cancel</button><button class="btn primary" onclick="submitRule()">Save Rule</button></div>
     </div>
   </div>
 
@@ -410,6 +603,10 @@
       event.target.classList.add('active');
       if (name === 'usage') refreshUsage();
       if (name === 'tasks') refreshTasks();
+      if (name === 'groups') refreshGroups();
+      if (name === 'skills') refreshSkills();
+      if (name === 'scheduler') refreshScheduler();
+      if (name === 'approvals') refreshApprovals();
     }
 
     // === WebSocket ===
@@ -440,6 +637,28 @@
         case 'task:complete': addLog('task', `Task ${data.taskId} completed (${data.iterations} iterations)`); refreshTasks(); break;
         case 'task:error': addLog('error', `Task ${data.taskId} error: ${data.error}`); refreshTasks(); break;
         case 'container:start': addLog('status', `Container started (${data.active} active, ${data.queued} queued)`); break;
+        case 'scheduler:job:start': addLog('task', `Scheduled job started: ${data.name}`); break;
+        case 'scheduler:job:complete': addLog('task', `Scheduled job "${data.name}" complete (${data.resultLength} chars)`); break;
+        case 'scheduler:job:error': addLog('error', `Scheduled job "${data.name}" error: ${data.error}`); break;
+        case 'calendar:synced': addLog('status', `Calendar synced: ${data.eventCount} events`); break;
+        case 'a2a:message': addLog('status', `A2A: ${data.type} from ${data.from} to ${data.to}`); break;
+        case 'a2a:agent:spawned': addLog('status', `Sub-agent spawned: ${data.role}`); break;
+        case 'skills:reloaded': addLog('status', `Skills reloaded (trigger: ${data.trigger})`); refreshSkills(); break;
+        case 'approval:required':
+          addLog('status', `Approval required: ${data.toolName} (${data.riskLevel})`);
+          refreshPendingApprovals();
+          refreshApprovalStats();
+          break;
+        case 'approval:resolved':
+          addLog(data.status === 'approved' ? 'reply' : 'error', `Tool ${data.toolName} ${data.status}${data.respondedBy ? ' by ' + data.respondedBy : ''}`);
+          refreshPendingApprovals();
+          refreshApprovalStats();
+          break;
+        case 'approval:timeout':
+          addLog('error', `Approval timeout: ${data.toolName} (auto-${data.timeoutAction})`);
+          refreshPendingApprovals();
+          refreshApprovalStats();
+          break;
       }
     }
 
@@ -581,6 +800,515 @@
     async function stopTaskAction(id) { await apiFetch(`/api/tasks/${id}/stop`, {method:'POST'}); refreshTasks(); }
     async function startTaskAction(id) { await apiFetch(`/api/tasks/${id}/start`, {method:'POST'}); refreshTasks(); }
     async function deleteTaskAction(id) { if (!confirm('Delete this task?')) return; await apiFetch(`/api/tasks/${id}`, {method:'DELETE'}); refreshTasks(); }
+
+    // === Agent Groups Tab ===
+    let agentGroups = [];
+
+    async function refreshGroups() {
+      try {
+        const res = await apiFetch('/api/agent-groups');
+        agentGroups = await res.json();
+        renderGroups();
+      } catch {}
+    }
+
+    function renderGroups() {
+      const el = document.getElementById('groupList');
+      if (!agentGroups.length) { el.innerHTML = `<div class="empty-state"><p>No agent groups yet.</p><button class="btn primary" onclick="openAddGroup()">Create your first group</button></div>`; return; }
+      el.innerHTML = agentGroups.map(g => `
+        <div class="task-item">
+          <div class="task-header">
+            <div>
+              <span class="task-name">${escHtml(g.name)}</span>
+              <span class="task-badge running" style="font-size:10px;">${escHtml(g.model)}</span>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn sm" onclick="editGroup('${g.id}')">Edit</button>
+              <button class="btn sm" onclick="viewGroupStats('${g.id}')">Stats</button>
+              <button class="btn sm danger" onclick="deleteGroup('${g.id}')">Delete</button>
+            </div>
+          </div>
+          <div class="task-meta">
+            ${g.description ? escHtml(g.description) + ' | ' : ''}
+            Max Tokens: ${g.maxTokens} |
+            Budget: ${g.budgetMaxTokensDay > 0 ? fmtNum(g.budgetMaxTokensDay)+'/day' : 'unlimited'} |
+            Skills: ${g.skills?.length || 0}
+            ${g.apiKeyEncrypted ? ' | Custom API Key' : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function openAddGroup() {
+      document.getElementById('groupEditId').value = '';
+      document.getElementById('groupModalTitle').textContent = 'New Agent Group';
+      document.getElementById('groupName').value = '';
+      document.getElementById('groupDesc').value = '';
+      document.getElementById('groupModel').value = 'claude-sonnet-4-20250514';
+      document.getElementById('groupApiKey').value = '';
+      document.getElementById('groupMaxTokens').value = '4096';
+      document.getElementById('groupSystemPrompt').value = '';
+      document.getElementById('groupBudgetDay').value = '0';
+      document.getElementById('groupBudgetMonth').value = '0';
+      populateGroupChannelSelect();
+      document.getElementById('addGroupModal').classList.remove('hidden');
+    }
+
+    function populateGroupChannelSelect() {
+      const sel = document.getElementById('groupChannelAssign');
+      sel.innerHTML = '<option value="">-- None --</option>' + channels.map(ch => `<option value="${ch.id}">${escHtml(ch.name)} (${ch.type})</option>`).join('');
+    }
+
+    async function editGroup(id) {
+      try {
+        const res = await apiFetch(`/api/agent-groups/${id}`);
+        const g = await res.json();
+        document.getElementById('groupEditId').value = g.id;
+        document.getElementById('groupModalTitle').textContent = 'Edit Agent Group';
+        document.getElementById('groupName').value = g.name;
+        document.getElementById('groupDesc').value = g.description || '';
+        document.getElementById('groupModel').value = g.model;
+        document.getElementById('groupApiKey').value = '';
+        document.getElementById('groupMaxTokens').value = g.maxTokens;
+        document.getElementById('groupSystemPrompt').value = g.systemPrompt || '';
+        document.getElementById('groupBudgetDay').value = g.budgetMaxTokensDay || 0;
+        document.getElementById('groupBudgetMonth').value = g.budgetMaxTokensMonth || 0;
+        populateGroupChannelSelect();
+        document.getElementById('addGroupModal').classList.remove('hidden');
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function submitGroup() {
+      const editId = document.getElementById('groupEditId').value;
+      const data = {
+        name: document.getElementById('groupName').value,
+        description: document.getElementById('groupDesc').value,
+        model: document.getElementById('groupModel').value,
+        maxTokens: parseInt(document.getElementById('groupMaxTokens').value) || 4096,
+        systemPrompt: document.getElementById('groupSystemPrompt').value,
+        budgetMaxTokensDay: parseInt(document.getElementById('groupBudgetDay').value) || 0,
+        budgetMaxTokensMonth: parseInt(document.getElementById('groupBudgetMonth').value) || 0,
+      };
+      const apiKey = document.getElementById('groupApiKey').value;
+      if (apiKey) data.apiKey = apiKey;
+      if (!data.name) { alert('Name is required'); return; }
+      try {
+        if (editId) {
+          await apiFetch(`/api/agent-groups/${editId}`, { method: 'PUT', body: JSON.stringify(data) });
+        } else {
+          const res = await apiFetch('/api/agent-groups', { method: 'POST', body: JSON.stringify(data) });
+          const created = await res.json();
+          const channelId = document.getElementById('groupChannelAssign').value;
+          if (channelId) {
+            await apiFetch(`/api/agent-groups/${created.id}/assign/${channelId}`, { method: 'POST' });
+          }
+        }
+        closeModal('addGroupModal');
+        refreshGroups();
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function deleteGroup(id) {
+      if (!confirm('Delete this agent group?')) return;
+      await apiFetch(`/api/agent-groups/${id}`, { method: 'DELETE' });
+      refreshGroups();
+    }
+
+    async function viewGroupStats(id) {
+      try {
+        const res = await apiFetch(`/api/agent-groups/${id}/stats`);
+        const stats = await res.json();
+        alert(`Group Stats:\n\nTokens Today: ${fmtNum(stats.tokensToday)}\nTokens This Month: ${fmtNum(stats.tokensMonth)}\nAssigned Channels: ${stats.channelCount}`);
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    // === Skills Tab ===
+    let skillsList = [];
+
+    async function refreshSkills() {
+      try {
+        const res = await apiFetch('/api/skills');
+        skillsList = await res.json();
+        renderSkills();
+      } catch {}
+    }
+
+    function renderSkills() {
+      const el = document.getElementById('skillList');
+      if (!skillsList.length) { el.innerHTML = `<div class="empty-state"><p>No skills found.</p></div>`; return; }
+      el.innerHTML = skillsList.map(s => `
+        <div class="task-item">
+          <div class="task-header">
+            <div>
+              <span class="task-name">${escHtml(s.manifest?.name || s.name)}</span>
+              <span class="task-badge ${s.builtIn ? 'completed' : s.enabled ? 'running' : 'pending'}">${s.builtIn ? 'Built-in' : s.enabled ? 'Enabled' : 'Disabled'}</span>
+              <span style="font-size:11px;color:var(--text2);margin-left:8px;">v${s.manifest?.version || '?'}</span>
+            </div>
+            <div style="display:flex;gap:6px;">
+              ${!s.builtIn ? `<button class="btn sm" onclick="toggleSkill('${escHtml(s.manifest?.name || s.name)}', ${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button>` : ''}
+              ${!s.builtIn ? `<button class="btn sm danger" onclick="deleteSkill('${escHtml(s.manifest?.name || s.name)}')">Delete</button>` : ''}
+            </div>
+          </div>
+          <div class="task-meta">${escHtml(s.manifest?.description || 'No description')} ${s.manifest?.containerCompatible ? '| Container-ready' : ''}</div>
+        </div>
+      `).join('');
+    }
+
+    function openInstallSkill() { document.getElementById('installSkillModal').classList.remove('hidden'); }
+
+    async function submitSkillInstall() {
+      const name = document.getElementById('skillInstallName').value;
+      const manifestStr = document.getElementById('skillInstallManifest').value;
+      const handler = document.getElementById('skillInstallHandler').value;
+      if (!name || !manifestStr) { alert('Name and manifest are required'); return; }
+      try {
+        const manifest = JSON.parse(manifestStr);
+        await apiFetch('/api/skills', { method: 'POST', body: JSON.stringify({ name, manifest, handler }) });
+        closeModal('installSkillModal');
+        refreshSkills();
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function toggleSkill(name, enabled) {
+      await apiFetch(`/api/skills/${name}/toggle`, { method: 'POST', body: JSON.stringify({ enabled }) });
+      refreshSkills();
+    }
+
+    async function deleteSkill(name) {
+      if (!confirm(`Delete skill "${name}"?`)) return;
+      await apiFetch(`/api/skills/${name}`, { method: 'DELETE' });
+      refreshSkills();
+    }
+
+    // === Scheduler Tab ===
+    let scheduledJobs = [];
+    let calendarSources = [];
+
+    async function refreshScheduler() {
+      await Promise.all([refreshJobs(), refreshCalendars(), refreshSchedulerStats()]);
+    }
+
+    async function refreshJobs() {
+      try {
+        const res = await apiFetch('/api/scheduler/jobs');
+        scheduledJobs = await res.json();
+        renderJobs();
+      } catch {}
+    }
+
+    function renderJobs() {
+      const el = document.getElementById('jobList');
+      if (!scheduledJobs.length) { el.innerHTML = `<div class="empty-state"><p>No scheduled jobs yet.</p><button class="btn primary" onclick="openAddJob()">Create a scheduled job</button></div>`; return; }
+      el.innerHTML = scheduledJobs.map(j => `
+        <div class="task-item">
+          <div class="task-header">
+            <div>
+              <span class="task-name">${escHtml(j.name)}</span>
+              <span class="task-badge ${j.enabled ? 'running' : 'pending'}">${j.enabled ? 'Active' : 'Paused'}</span>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn sm" onclick="toggleJob('${j.id}', ${!j.enabled})">${j.enabled ? 'Pause' : 'Resume'}</button>
+              <button class="btn sm" onclick="runJobNow('${j.id}')">Run Now</button>
+              <button class="btn sm danger" onclick="deleteJob('${j.id}')">Delete</button>
+            </div>
+          </div>
+          <div class="task-meta">
+            Type: ${j.trigger?.type || '?'} |
+            Runs: ${j.runCount || 0} |
+            Last: ${j.lastRunAt ? new Date(j.lastRunAt).toLocaleString('de-DE') : 'never'} |
+            Status: ${j.lastRunStatus || '-'}
+            ${j.nextRunAt ? ' | Next: ' + new Date(j.nextRunAt).toLocaleString('de-DE') : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function openAddJob() {
+      document.getElementById('jobName').value = '';
+      document.getElementById('jobPrompt').value = '';
+      document.getElementById('jobTriggerType').value = 'daily';
+      updateJobForm();
+      populateJobOutputChannels();
+      document.getElementById('addJobModal').classList.remove('hidden');
+    }
+
+    function updateJobForm() {
+      const type = document.getElementById('jobTriggerType').value;
+      document.getElementById('jobTimeFields').style.display = (type === 'daily' || type === 'weekly') ? 'block' : 'none';
+      document.getElementById('jobWeeklyFields').style.display = type === 'weekly' ? 'block' : 'none';
+      document.getElementById('jobIntervalFields').style.display = type === 'interval' ? 'block' : 'none';
+      document.getElementById('jobOnceFields').style.display = type === 'once' ? 'block' : 'none';
+    }
+
+    function updateJobOutputForm() {
+      const type = document.getElementById('jobOutputType').value;
+      document.getElementById('jobOutputChannelFields').style.display = type === 'channel' ? 'block' : 'none';
+      document.getElementById('jobOutputWebhookFields').style.display = type === 'webhook' ? 'block' : 'none';
+      document.getElementById('jobOutputEmailFields').style.display = type === 'email' ? 'block' : 'none';
+    }
+
+    function populateJobOutputChannels() {
+      const sel = document.getElementById('jobOutputChannel');
+      sel.innerHTML = channels.map(ch => `<option value="${ch.id}">${escHtml(ch.name)} (${ch.type})</option>`).join('');
+    }
+
+    async function submitJob() {
+      const name = document.getElementById('jobName').value;
+      const prompt = document.getElementById('jobPrompt').value;
+      if (!name || !prompt) { alert('Name and prompt are required'); return; }
+      const triggerType = document.getElementById('jobTriggerType').value;
+      const trigger = { type: triggerType, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+      if (triggerType === 'daily' || triggerType === 'weekly') {
+        const timeParts = document.getElementById('jobTime').value.split(':');
+        trigger.time = { hour: parseInt(timeParts[0]), minute: parseInt(timeParts[1]) };
+      }
+      if (triggerType === 'weekly') {
+        trigger.days = [...document.querySelectorAll('.jobDay:checked')].map(cb => parseInt(cb.value));
+        if (!trigger.days.length) { alert('Select at least one day'); return; }
+      }
+      if (triggerType === 'interval') trigger.intervalMinutes = parseInt(document.getElementById('jobInterval').value) || 30;
+      if (triggerType === 'once') trigger.runAt = new Date(document.getElementById('jobRunAt').value).toISOString();
+
+      const outputType = document.getElementById('jobOutputType').value;
+      const output = { type: outputType };
+      if (outputType === 'channel') output.channelId = document.getElementById('jobOutputChannel').value;
+      if (outputType === 'webhook') output.webhookUrl = document.getElementById('jobOutputWebhook').value;
+      if (outputType === 'email') output.emailTo = document.getElementById('jobOutputEmail').value;
+
+      try {
+        await apiFetch('/api/scheduler/jobs', { method: 'POST', body: JSON.stringify({
+          name, trigger, action: { prompt, agentGroupId: '', maxIterations: 5 }, output
+        })});
+        closeModal('addJobModal');
+        refreshJobs();
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function toggleJob(id, enabled) { await apiFetch(`/api/scheduler/jobs/${id}/toggle`, { method: 'POST', body: JSON.stringify({ enabled }) }); refreshJobs(); }
+    async function runJobNow(id) { await apiFetch(`/api/scheduler/jobs/${id}/run`, { method: 'POST' }); refreshJobs(); addLog('task', 'Scheduled job triggered manually'); }
+    async function deleteJob(id) { if (!confirm('Delete this job?')) return; await apiFetch(`/api/scheduler/jobs/${id}`, { method: 'DELETE' }); refreshJobs(); }
+
+    // === Calendar Sources ===
+    async function refreshCalendars() {
+      try {
+        const res = await apiFetch('/api/scheduler/calendars');
+        calendarSources = await res.json();
+        renderCalendars();
+      } catch {}
+    }
+
+    function renderCalendars() {
+      const el = document.getElementById('calendarList');
+      if (!calendarSources.length) { el.innerHTML = `<div class="empty-state"><p>No calendars configured.</p><button class="btn primary" onclick="openAddCalendar()">Add iCal URL</button></div>`; return; }
+      el.innerHTML = calendarSources.map(c => `
+        <div class="task-item">
+          <div class="task-header">
+            <div><span class="task-name">${escHtml(c.name)}</span></div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn sm" onclick="syncCalendarNow('${c.id}')">Sync</button>
+              <button class="btn sm danger" onclick="deleteCalendar('${c.id}')">Delete</button>
+            </div>
+          </div>
+          <div class="task-meta">
+            Poll: every ${c.pollIntervalMinutes || 15}min |
+            Last sync: ${c.syncedAt ? new Date(c.syncedAt).toLocaleString('de-DE') : 'never'}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function openAddCalendar() { document.getElementById('addCalendarModal').classList.remove('hidden'); }
+
+    async function submitCalendar() {
+      const name = document.getElementById('calName').value;
+      const url = document.getElementById('calUrl').value;
+      const pollIntervalMinutes = parseInt(document.getElementById('calInterval').value) || 15;
+      if (!name || !url) { alert('Name and URL are required'); return; }
+      try {
+        await apiFetch('/api/scheduler/calendars', { method: 'POST', body: JSON.stringify({ name, url, pollIntervalMinutes }) });
+        closeModal('addCalendarModal');
+        refreshCalendars();
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function syncCalendarNow(id) {
+      try {
+        const res = await apiFetch(`/api/scheduler/calendars/${id}/sync`, { method: 'POST' });
+        const data = await res.json();
+        addLog('status', `Calendar synced: ${data.eventCount} events`);
+        refreshCalendars();
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function deleteCalendar(id) { if (!confirm('Delete this calendar?')) return; await apiFetch(`/api/scheduler/calendars/${id}`, { method: 'DELETE' }); refreshCalendars(); }
+
+    async function refreshSchedulerStats() {
+      try {
+        const res = await apiFetch('/api/scheduler/stats');
+        const stats = await res.json();
+        document.getElementById('schedActiveJobs').textContent = stats.activeJobs || 0;
+        document.getElementById('schedCronJobs').textContent = stats.cronJobs || 0;
+        document.getElementById('schedIntervalJobs').textContent = stats.intervalJobs || 0;
+      } catch {}
+    }
+
+    // === Approvals Tab ===
+    let pendingApprovals = [];
+    let approvalRules = [];
+
+    async function refreshApprovals() {
+      await Promise.all([refreshApprovalStats(), refreshPendingApprovals(), refreshApprovalRules(), refreshApprovalHistory()]);
+    }
+
+    async function refreshApprovalStats() {
+      try {
+        const res = await apiFetch('/api/approvals/stats');
+        const stats = await res.json();
+        document.getElementById('approvalPending').textContent = stats.pending || 0;
+        document.getElementById('approvalApproved').textContent = stats.approved || 0;
+        document.getElementById('approvalRejected').textContent = stats.rejected || 0;
+        document.getElementById('approvalTimeout').textContent = stats.timeout || 0;
+        document.getElementById('approvalAutoApproved').textContent = stats.autoApproved || 0;
+      } catch {}
+    }
+
+    async function refreshPendingApprovals() {
+      try {
+        const res = await apiFetch('/api/approvals?status=pending');
+        pendingApprovals = await res.json();
+        renderPendingApprovals();
+      } catch {}
+    }
+
+    function renderPendingApprovals() {
+      const el = document.getElementById('pendingApprovalList');
+      if (!pendingApprovals.length) {
+        el.innerHTML = '<div class="empty-state" style="padding:20px;"><p>No pending approvals</p></div>';
+        return;
+      }
+      el.innerHTML = pendingApprovals.map(a => {
+        const timeLeft = Math.max(0, Math.round((new Date(a.timeoutAt).getTime() - Date.now()) / 1000));
+        const inputStr = JSON.stringify(a.toolInput).slice(0, 200);
+        return `
+          <div class="task-item" style="border-left:3px solid ${riskColor(a.riskLevel)};">
+            <div class="task-header">
+              <div>
+                <span class="task-name">${escHtml(a.toolName)}</span>
+                <span class="task-badge" style="background:${riskColor(a.riskLevel)}20;color:${riskColor(a.riskLevel)};">${a.riskLevel.toUpperCase()}</span>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <button class="btn sm primary" onclick="approveRequest('${a.id}')">Approve</button>
+                <button class="btn sm danger" onclick="rejectRequest('${a.id}')">Reject</button>
+              </div>
+            </div>
+            <div class="task-meta">
+              Run #${a.runId} | Timeout: ${timeLeft}s | ${new Date(a.requestedAt).toLocaleTimeString('de-DE')}
+            </div>
+            <div class="task-output" style="font-size:11px;">${escHtml(inputStr)}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function approveRequest(id) {
+      try {
+        await apiFetch(`/api/approvals/${id}/approve`, { method: 'POST', body: JSON.stringify({}) });
+        refreshApprovals();
+        addLog('reply', `Approved tool call ${id.slice(0,8)}...`);
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function rejectRequest(id) {
+      const reason = prompt('Rejection reason (optional):');
+      try {
+        await apiFetch(`/api/approvals/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason: reason || undefined }) });
+        refreshApprovals();
+        addLog('error', `Rejected tool call ${id.slice(0,8)}...`);
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function refreshApprovalRules() {
+      try {
+        const res = await apiFetch('/api/approval-rules');
+        const data = await res.json();
+        approvalRules = data.rules || [];
+        renderApprovalRules(data.defaults || {});
+      } catch {}
+    }
+
+    function renderApprovalRules(defaults) {
+      const el = document.getElementById('approvalRuleList');
+      if (!approvalRules.length) {
+        const defaultsHtml = Object.entries(defaults).map(([tool, risk]) =>
+          `<div style="font-size:12px;color:var(--text2);padding:4px 0;">${escHtml(tool)}: <span style="color:${riskColor(risk)}">${risk}</span> (default)</div>`
+        ).join('');
+        el.innerHTML = defaultsHtml || '<div class="empty-state" style="padding:10px;"><p>No custom rules. Defaults apply.</p></div>';
+        return;
+      }
+      el.innerHTML = approvalRules.map(r => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--bg3);border-radius:6px;margin-bottom:6px;">
+          <div>
+            <span style="font-weight:500;font-size:13px;">${escHtml(r.toolName)}</span>
+            <span class="task-badge" style="background:${riskColor(r.riskLevel)}20;color:${riskColor(r.riskLevel)};">${r.riskLevel}</span>
+            ${r.requireApproval ? '<span style="font-size:11px;color:var(--yellow);">Requires approval</span>' : '<span style="font-size:11px;color:var(--green);">Auto-pass</span>'}
+            ${r.autoApprove ? '<span style="font-size:11px;color:var(--blue);">Auto-approve</span>' : ''}
+          </div>
+          <button class="btn sm danger" onclick="deleteRule('${escHtml(r.toolName)}')">Remove</button>
+        </div>
+      `).join('');
+    }
+
+    function openAddRule() {
+      const sel = document.getElementById('ruleToolName');
+      sel.innerHTML = '';
+      try {
+        apiFetch('/api/tools').then(r => r.json()).then(tools => {
+          sel.innerHTML = tools.map(t => `<option value="${escHtml(t.name)}">${escHtml(t.name)}</option>`).join('');
+        });
+      } catch {}
+      document.getElementById('addRuleModal').classList.remove('hidden');
+    }
+
+    async function submitRule() {
+      const data = {
+        toolName: document.getElementById('ruleToolName').value,
+        riskLevel: document.getElementById('ruleRiskLevel').value,
+        requireApproval: document.getElementById('ruleRequire').value === 'true',
+        autoApprove: document.getElementById('ruleAutoApprove').value === 'true',
+        timeoutSeconds: parseInt(document.getElementById('ruleTimeout').value) || 300,
+        timeoutAction: document.getElementById('ruleTimeoutAction').value,
+      };
+      if (!data.toolName) { alert('Select a tool'); return; }
+      try {
+        await apiFetch('/api/approval-rules', { method: 'POST', body: JSON.stringify(data) });
+        closeModal('addRuleModal');
+        refreshApprovalRules();
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function deleteRule(toolName) {
+      if (!confirm(`Remove approval rule for "${toolName}"?`)) return;
+      await apiFetch(`/api/approval-rules/${toolName}`, { method: 'DELETE' });
+      refreshApprovalRules();
+    }
+
+    async function refreshApprovalHistory() {
+      try {
+        const res = await apiFetch('/api/approvals?limit=30');
+        const approvals = await res.json();
+        const el = document.getElementById('approvalHistory');
+        if (!approvals.length) { el.innerHTML = '<div class="empty-state" style="padding:20px;"><p>No approval history</p></div>'; return; }
+        el.innerHTML = `<table class="usage-table"><thead><tr><th>Time</th><th>Tool</th><th>Risk</th><th>Status</th><th>By</th><th>Reason</th></tr></thead><tbody>${approvals.map(a => `<tr><td style="font-size:12px;">${new Date(a.requestedAt).toLocaleString('de-DE')}</td><td><code>${escHtml(a.toolName)}</code></td><td><span style="color:${riskColor(a.riskLevel)}">${a.riskLevel}</span></td><td><span style="color:${statusColor(a.status)}">${a.status}</span></td><td>${escHtml(a.respondedBy || '-')}</td><td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">${escHtml(a.reason || '-')}</td></tr>`).join('')}</tbody></table>`;
+      } catch {}
+    }
+
+    function riskColor(level) {
+      return { low: 'var(--green)', medium: 'var(--yellow)', high: 'var(--orange)', critical: 'var(--red)' }[level] || 'var(--text2)';
+    }
+
+    function statusColor(status) {
+      return { pending: 'var(--yellow)', approved: 'var(--green)', rejected: 'var(--red)', timeout: 'var(--orange)', auto_approved: 'var(--blue)' }[status] || 'var(--text2)';
+    }
 
     // === Util ===
     function escHtml(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }

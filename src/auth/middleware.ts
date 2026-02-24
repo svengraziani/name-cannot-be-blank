@@ -160,6 +160,13 @@ export function rateLimitMiddleware(maxRequests = 60, windowSeconds = 60) {
 }
 
 // Clean up expired sessions periodically
-setInterval(() => {
-  try { cleanExpiredSessions(); } catch { /* ignore */ }
-}, 60 * 60 * 1000); // Every hour
+setInterval(
+  () => {
+    try {
+      cleanExpiredSessions();
+    } catch {
+      /* ignore */
+    }
+  },
+  60 * 60 * 1000,
+); // Every hour
