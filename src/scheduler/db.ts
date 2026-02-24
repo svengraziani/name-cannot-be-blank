@@ -70,6 +70,9 @@ export function initSchedulerSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_at);
   `);
 
+  // Unique index for calendar event upserts
+  ensureCalendarEventsUniqueIndex();
+
   console.log('[scheduler] Database schema initialized');
 }
 
@@ -193,10 +196,24 @@ export function completeJobRun(runId: number, update: {
   );
 }
 
+function rowToJobRun(row: any): JobRun {
+  return {
+    id: row.id,
+    jobId: row.job_id,
+    status: row.status,
+    output: row.output || undefined,
+    error: row.error || undefined,
+    inputTokens: row.input_tokens || 0,
+    outputTokens: row.output_tokens || 0,
+    startedAt: row.started_at,
+    completedAt: row.completed_at || undefined,
+  };
+}
+
 export function getJobRuns(jobId: string, limit = 20): JobRun[] {
-  return getDb().prepare(
+  return (getDb().prepare(
     'SELECT * FROM job_runs WHERE job_id = ? ORDER BY started_at DESC LIMIT ?'
-  ).all(jobId, limit) as any[];
+  ).all(jobId, limit) as any[]).map(rowToJobRun);
 }
 
 // --- Calendar Sources ---

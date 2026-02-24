@@ -12,6 +12,7 @@ import { runInContainer, checkContainerRuntime, ContainerInput } from './contain
 import { toolRegistry } from './tools';
 import { EventEmitter } from 'events';
 import { ResolvedAgentConfig } from './groups/resolver';
+import { setA2AContext } from './a2a';
 
 export const agentEvents = new EventEmitter();
 
@@ -120,6 +121,13 @@ export async function processMessage(
     const effectiveApiKey = agentConfig?.apiKey || config.anthropicApiKey;
     const effectiveTools = agentConfig?.enabledSkills || enabledTools;
     const useContainer = agentConfig?.containerMode ?? isContainerMode();
+
+    // Set A2A context so delegate_task and other A2A tools work correctly
+    setA2AContext({
+      groupId: agentConfig?.groupId || '',
+      agentId: `agent-${runId}`,
+      conversationId,
+    });
 
     // Call Claude - either via container or directly
     let response: AgentResponse;

@@ -587,12 +587,13 @@
         case 'task:complete': addLog('task', `Task ${data.taskId} completed (${data.iterations} iterations)`); refreshTasks(); break;
         case 'task:error': addLog('error', `Task ${data.taskId} error: ${data.error}`); refreshTasks(); break;
         case 'container:start': addLog('status', `Container started (${data.active} active, ${data.queued} queued)`); break;
-        case 'job:start': addLog('task', `Scheduled job started: ${data.name}`); break;
-        case 'job:complete': addLog('task', `Scheduled job "${data.name}" complete (${data.resultLength} chars)`); break;
-        case 'job:error': addLog('error', `Scheduled job "${data.name}" error: ${data.error}`); break;
+        case 'scheduler:job:start': addLog('task', `Scheduled job started: ${data.name}`); break;
+        case 'scheduler:job:complete': addLog('task', `Scheduled job "${data.name}" complete (${data.resultLength} chars)`); break;
+        case 'scheduler:job:error': addLog('error', `Scheduled job "${data.name}" error: ${data.error}`); break;
         case 'calendar:synced': addLog('status', `Calendar synced: ${data.eventCount} events`); break;
         case 'a2a:message': addLog('status', `A2A: ${data.type} from ${data.from} to ${data.to}`); break;
         case 'a2a:agent:spawned': addLog('status', `Sub-agent spawned: ${data.role}`); break;
+        case 'skills:reloaded': addLog('status', `Skills reloaded (trigger: ${data.trigger})`); refreshSkills(); break;
       }
     }
 
