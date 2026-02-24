@@ -1,12 +1,23 @@
 import { ChannelAdapter, IncomingMessage } from './base';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // Baileys types - dynamic import to handle optional dependency
 type WASocket = any;
+
+const MAX_RECONNECT_ATTEMPTS = 5;
+const INITIAL_BACKOFF_MS = 3000;
+const MAX_BACKOFF_MS = 30000;
+const MAX_QR_RETRIES = 3;
 
 export class WhatsAppAdapter extends ChannelAdapter {
   private sock?: WASocket;
   private _qrCode?: string;
   private _qrDataUrl?: string;
+  private reconnectAttempts = 0;
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private qrRetries = 0;
+  private stopping = false;
 
   constructor(channelId: string) {
     super(channelId, 'whatsapp');
@@ -16,55 +27,122 @@ export class WhatsAppAdapter extends ChannelAdapter {
     return this._qrCode;
   }
 
+  private get authDir(): string {
+    return `/data/whatsapp-auth-${this.channelId}`;
+  }
+
+  private clearAuthState(): void {
+    try {
+      if (fs.existsSync(this.authDir)) {
+        const files = fs.readdirSync(this.authDir);
+        for (const file of files) {
+          fs.unlinkSync(path.join(this.authDir, file));
+        }
+        fs.rmdirSync(this.authDir);
+        console.log(`[whatsapp:${this.channelId}] Cleared stale auth state`);
+      }
+    } catch (err) {
+      console.warn(`[whatsapp:${this.channelId}] Failed to clear auth state:`, err);
+    }
+  }
+
   async connect(): Promise<void> {
+    this.stopping = false;
     this.setStatus('connecting');
 
     try {
+      // Clean up previous socket if any
+      if (this.sock) {
+        try { this.sock.end(undefined); } catch {}
+        this.sock = undefined;
+      }
+
       // Dynamic import of baileys
       const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = await import('baileys');
-      const { Boom } = await import('@hapi/boom');
 
-      const authDir = `/data/whatsapp-auth-${this.channelId}`;
-      const { state, saveCreds } = await useMultiFileAuthState(authDir);
+      const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
 
       this.sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false,
+        printQRInTerminal: true,
+        browser: ['Loop Gateway', 'Chrome', '22.0'],
+        connectTimeoutMs: 20000,
+        qrTimeout: 40000,
       });
 
       this.sock.ev.on('creds.update', saveCreds);
 
       this.sock.ev.on('connection.update', (update: any) => {
+        if (this.stopping) return;
+
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
           this._qrCode = qr;
+          this.qrRetries++;
+          this.reconnectAttempts = 0; // Reset reconnect counter when QR is shown
           this.emit('qr', qr);
-          console.log(`[whatsapp:${this.channelId}] QR code generated - scan via Web UI`);
+          console.log(`[whatsapp:${this.channelId}] QR code generated (attempt ${this.qrRetries}/${MAX_QR_RETRIES}) - scan via Web UI`);
+
+          if (this.qrRetries > MAX_QR_RETRIES) {
+            console.log(`[whatsapp:${this.channelId}] QR not scanned after ${MAX_QR_RETRIES} attempts, giving up`);
+            this.setStatus('error', 'QR code expired. Delete and recreate the channel to try again.');
+            this.sock?.end(undefined);
+            return;
+          }
         }
 
         if (connection === 'open') {
           this._qrCode = undefined;
           this._qrDataUrl = undefined;
+          this.reconnectAttempts = 0;
+          this.qrRetries = 0;
           this.setStatus('connected');
-          console.log(`[whatsapp:${this.channelId}] Connected`);
+          console.log(`[whatsapp:${this.channelId}] Connected successfully`);
         }
 
         if (connection === 'close') {
           const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-          const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+          const errorMsg = (lastDisconnect?.error as any)?.message || 'Unknown error';
 
-          if (shouldReconnect) {
-            console.log(`[whatsapp:${this.channelId}] Reconnecting...`);
-            this.connect();
-          } else {
+          console.log(`[whatsapp:${this.channelId}] Connection closed: code=${statusCode} error="${errorMsg}"`);
+
+          if (statusCode === DisconnectReason.loggedOut) {
+            // Logged out: clear auth and stop
+            console.log(`[whatsapp:${this.channelId}] Logged out, clearing auth state`);
+            this.clearAuthState();
             this.setStatus('disconnected');
-            console.log(`[whatsapp:${this.channelId}] Logged out`);
+            return;
           }
+
+          if (statusCode === DisconnectReason.restartRequired) {
+            // Restart required: reconnect immediately once
+            console.log(`[whatsapp:${this.channelId}] Restart required, reconnecting...`);
+            this.reconnectAttempts = 0;
+            this.scheduleReconnect(1000);
+            return;
+          }
+
+          // For other errors: reconnect with backoff
+          this.reconnectAttempts++;
+
+          if (this.reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+            console.log(`[whatsapp:${this.channelId}] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached`);
+            // Clear potentially corrupt auth state so next connect gets fresh QR
+            this.clearAuthState();
+            this.setStatus('error', `Connection failed after ${MAX_RECONNECT_ATTEMPTS} attempts. Auth state cleared. Delete and recreate, or restart the gateway.`);
+            return;
+          }
+
+          const backoff = Math.min(INITIAL_BACKOFF_MS * Math.pow(2, this.reconnectAttempts - 1), MAX_BACKOFF_MS);
+          console.log(`[whatsapp:${this.channelId}] Reconnecting in ${backoff}ms (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+          this.scheduleReconnect(backoff);
         }
       });
 
       this.sock.ev.on('messages.upsert', (upsert: any) => {
+        if (this.stopping) return;
+
         for (const msg of upsert.messages) {
           if (!msg.message || msg.key.fromMe) continue;
 
@@ -89,14 +167,33 @@ export class WhatsAppAdapter extends ChannelAdapter {
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[whatsapp:${this.channelId}] Connect error:`, msg);
       this.setStatus('error', msg);
       throw err;
     }
   }
 
+  private scheduleReconnect(delayMs: number): void {
+    if (this.stopping) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+
+    this.reconnectTimer = setTimeout(() => {
+      if (!this.stopping) {
+        this.connect().catch(err => {
+          console.error(`[whatsapp:${this.channelId}] Reconnect failed:`, err);
+        });
+      }
+    }, delayMs);
+  }
+
   async disconnect(): Promise<void> {
+    this.stopping = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
     if (this.sock) {
-      this.sock.end(undefined);
+      try { this.sock.end(undefined); } catch {}
       this.sock = undefined;
     }
     this.setStatus('disconnected');
@@ -116,6 +213,7 @@ export class WhatsAppAdapter extends ChannelAdapter {
     return {
       qrCode: this._qrCode,
       qrDataUrl: this._qrDataUrl,
+      reconnectAttempts: this.reconnectAttempts,
     };
   }
 }
