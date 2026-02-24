@@ -143,6 +143,12 @@ async function startChannel(ch: ChannelRow): Promise<void> {
       throw new Error(`Unknown channel type: ${ch.type}`);
   }
 
+  // Extract enabled tools from channel config
+  const enabledTools = conf.tools as string[] | undefined;
+  if (enabledTools?.length) {
+    console.log(`[manager] Channel ${ch.id} (${ch.type}) tools: ${enabledTools.join(', ')}`);
+  }
+
   // Wire up incoming messages to the agent loop
   adapter.on('message', async (msg: IncomingMessage) => {
     console.log(`[manager] Message from ${msg.channelType}/${msg.sender}: ${msg.text.slice(0, 100)}`);
@@ -157,7 +163,7 @@ async function startChannel(ch: ChannelRow): Promise<void> {
     });
 
     try {
-      const reply = await processMessage(conversationId, msg.text, msg.channelType, msg.sender);
+      const reply = await processMessage(conversationId, msg.text, msg.channelType, msg.sender, enabledTools);
       await adapter.sendMessage(msg.externalChatId, reply);
 
       channelManagerEvents.emit('message:reply', {

@@ -23,6 +23,7 @@ import {
 } from '../agent/loop-mode';
 import { getContainerStats } from '../agent/container-runner';
 import { isContainerMode } from '../agent/loop';
+import { toolRegistry } from '../agent/tools';
 import {
   login,
   logout,
@@ -231,6 +232,16 @@ export function createApiRouter(): Router {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });
     }
+  });
+
+  // ==================== Tools ====================
+
+  router.get('/tools', (_req: Request, res: Response) => {
+    const tools = toolRegistry.getAll().map(t => ({
+      name: t.name,
+      description: t.description,
+    }));
+    res.json(tools);
   });
 
   // ==================== Health ====================

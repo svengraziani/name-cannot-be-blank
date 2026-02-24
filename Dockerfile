@@ -27,6 +27,10 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
+# Install Playwright Chromium browser + OS dependencies for web_browse tool
+RUN npx playwright install --with-deps chromium \
+    || echo "Playwright browser install skipped (web_browse tool will be unavailable)"
+
 COPY --from=builder /app/dist ./dist
 COPY ui/ ./ui/
 

@@ -2,6 +2,7 @@ import { config } from './config';
 import { createServer } from './gateway/server';
 import { initChannels } from './channels/manager';
 import { loadSystemPrompt, initAgentRuntime } from './agent/loop';
+import { registerBuiltinTools } from './agent/tools';
 
 async function main() {
   console.log('='.repeat(50));
@@ -16,6 +17,9 @@ async function main() {
 
   // Load system prompt
   loadSystemPrompt();
+
+  // Register built-in tools (web_browse, run_script, http_request)
+  registerBuiltinTools();
 
   // Initialize agent runtime (checks container availability)
   await initAgentRuntime();
