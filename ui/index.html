@@ -893,15 +893,18 @@
       if (apiKey) data.apiKey = apiKey;
       if (!data.name) { alert('Name is required'); return; }
       try {
+        let groupId;
         if (editId) {
           await apiFetch(`/api/agent-groups/${editId}`, { method: 'PUT', body: JSON.stringify(data) });
+          groupId = editId;
         } else {
           const res = await apiFetch('/api/agent-groups', { method: 'POST', body: JSON.stringify(data) });
           const created = await res.json();
-          const channelId = document.getElementById('groupChannelAssign').value;
-          if (channelId) {
-            await apiFetch(`/api/agent-groups/${created.id}/assign/${channelId}`, { method: 'POST' });
-          }
+          groupId = created.id;
+        }
+        const channelId = document.getElementById('groupChannelAssign').value;
+        if (channelId && groupId) {
+          await apiFetch(`/api/agent-groups/${groupId}/assign/${channelId}`, { method: 'POST' });
         }
         closeModal('addGroupModal');
         refreshGroups();

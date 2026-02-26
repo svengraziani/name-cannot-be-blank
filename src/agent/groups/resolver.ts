@@ -8,7 +8,13 @@
  */
 
 import { config } from '../../config';
-import { getGroupForChannel, getGroupApiKey, getGroupTokenUsageToday, getGroupTokenUsageMonth } from './manager';
+import {
+  getGroupForChannel,
+  getAgentGroup,
+  getGroupApiKey,
+  getGroupTokenUsageToday,
+  getGroupTokenUsageMonth,
+} from './manager';
 
 export interface ResolvedAgentConfig {
   systemPrompt: string;
@@ -55,7 +61,7 @@ export function resolveAgentConfig(channelId: string, defaultSystemPrompt: strin
  * Returns null if OK, or an error message if budget exceeded.
  */
 export function checkGroupBudget(groupId: string): string | null {
-  const group = getGroupForChannel(groupId);
+  const group = getAgentGroup(groupId);
   if (!group) return null;
 
   if (group.budgetMaxTokensDay > 0) {
