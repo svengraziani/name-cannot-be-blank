@@ -845,7 +845,9 @@
       document.getElementById('groupName').value = '';
       document.getElementById('groupDesc').value = '';
       document.getElementById('groupModel').value = 'claude-sonnet-4-20250514';
-      document.getElementById('groupApiKey').value = '';
+      const apiKeyInput = document.getElementById('groupApiKey');
+      apiKeyInput.value = '';
+      apiKeyInput.placeholder = 'sk-ant-...';
       document.getElementById('groupMaxTokens').value = '4096';
       document.getElementById('groupSystemPrompt').value = '';
       document.getElementById('groupBudgetDay').value = '0';
@@ -854,9 +856,13 @@
       document.getElementById('addGroupModal').classList.remove('hidden');
     }
 
-    function populateGroupChannelSelect() {
+    function populateGroupChannelSelect(groupId) {
       const sel = document.getElementById('groupChannelAssign');
-      sel.innerHTML = '<option value="">-- None --</option>' + channels.map(ch => `<option value="${ch.id}">${escHtml(ch.name)} (${ch.type})</option>`).join('');
+      const assignedChannel = groupId ? channels.find(ch => ch.agentGroupId === groupId) : null;
+      sel.innerHTML = '<option value="">-- None --</option>' + channels.map(ch => {
+        const selected = assignedChannel && ch.id === assignedChannel.id ? ' selected' : '';
+        return `<option value="${ch.id}"${selected}>${escHtml(ch.name)} (${ch.type})</option>`;
+      }).join('');
     }
 
     async function editGroup(id) {
@@ -868,12 +874,14 @@
         document.getElementById('groupName').value = g.name;
         document.getElementById('groupDesc').value = g.description || '';
         document.getElementById('groupModel').value = g.model;
-        document.getElementById('groupApiKey').value = '';
+        const apiKeyInput = document.getElementById('groupApiKey');
+        apiKeyInput.value = '';
+        apiKeyInput.placeholder = g.hasApiKey ? '(key set — leave blank to keep, enter new to replace)' : 'sk-ant-...';
         document.getElementById('groupMaxTokens').value = g.maxTokens;
         document.getElementById('groupSystemPrompt').value = g.systemPrompt || '';
         document.getElementById('groupBudgetDay').value = g.budgetMaxTokensDay || 0;
         document.getElementById('groupBudgetMonth').value = g.budgetMaxTokensMonth || 0;
-        populateGroupChannelSelect();
+        populateGroupChannelSelect(g.id);
         document.getElementById('addGroupModal').classList.remove('hidden');
       } catch (e) { alert('Error: ' + e.message); }
     }
@@ -905,9 +913,16 @@
         const channelId = document.getElementById('groupChannelAssign').value;
         if (channelId && groupId) {
           await apiFetch(`/api/agent-groups/${groupId}/assign/${channelId}`, { method: 'POST' });
+        } else if (!channelId && editId) {
+          // Unassign any previously assigned channel
+          const prev = channels.find(ch => ch.agentGroupId === editId);
+          if (prev) {
+            await apiFetch(`/api/agent-groups/${editId}/unassign/${prev.id}`, { method: 'POST' });
+          }
         }
         closeModal('addGroupModal');
         refreshGroups();
+        refreshChannels();
       } catch (e) { alert('Error: ' + e.message); }
     }
 

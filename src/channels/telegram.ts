@@ -6,6 +6,54 @@ export interface TelegramConfig {
   allowedUsers: string[];
 }
 
+/**
+ * Convert Markdown from Claude's output to Telegram-compatible HTML.
+ * Telegram supports: <b>, <i>, <code>, <pre>, <a>, <blockquote>
+ * but NOT headers, lists, or other Markdown constructs.
+ */
+function markdownToTelegramHtml(text: string): string {
+  let result = text;
+
+  // Escape HTML entities first (but preserve existing valid chars)
+  result = result
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // Code blocks (``` ... ```) - must be before inline code
+  result = result.replace(/```(\w*)\n?([\s\S]*?)```/g, (_m, _lang, code) => {
+    return `<pre>${code.trim()}</pre>`;
+  });
+
+  // Inline code (`...`)
+  result = result.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Bold + Italic (***text*** or ___text___)
+  result = result.replace(/\*\*\*(.+?)\*\*\*/g, '<b><i>$1</i></b>');
+
+  // Bold (**text**)
+  result = result.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+
+  // Italic (*text* - but not inside bold tags)
+  result = result.replace(/(?<![<\w])\*([^*]+?)\*(?![>\w])/g, '<i>$1</i>');
+
+  // Strikethrough (~~text~~)
+  result = result.replace(/~~(.+?)~~/g, '<s>$1</s>');
+
+  // Links [text](url)
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
+  // Headers (## text → bold text) - Telegram has no header support
+  result = result.replace(/^#{1,6}\s+(.+)$/gm, '<b>$1</b>');
+
+  // Blockquotes (> text)
+  result = result.replace(/^(?:&gt;)\s?(.+)$/gm, '<blockquote>$1</blockquote>');
+  // Merge consecutive blockquotes
+  result = result.replace(/<\/blockquote>\n<blockquote>/g, '\n');
+
+  return result;
+}
+
 export class TelegramAdapter extends ChannelAdapter {
   private bot?: TelegramBot;
   private readonly conf: TelegramConfig;
@@ -72,13 +120,28 @@ export class TelegramAdapter extends ChannelAdapter {
   async sendMessage(externalChatId: string, text: string): Promise<void> {
     if (!this.bot) throw new Error('Telegram bot not connected');
 
+    const html = markdownToTelegramHtml(text);
+
     // Split long messages (Telegram limit: 4096 chars)
     const maxLen = 4000;
-    if (text.length <= maxLen) {
-      await this.bot.sendMessage(externalChatId, text);
+    if (html.length <= maxLen) {
+      await this.bot.sendMessage(externalChatId, html, { parse_mode: 'HTML' });
     } else {
-      for (let i = 0; i < text.length; i += maxLen) {
-        await this.bot.sendMessage(externalChatId, text.slice(i, i + maxLen));
+      // Split on double newlines to avoid breaking mid-tag
+      const chunks: string[] = [];
+      let current = '';
+      for (const paragraph of html.split('\n\n')) {
+        if (current.length + paragraph.length + 2 > maxLen) {
+          if (current) chunks.push(current);
+          current = paragraph;
+        } else {
+          current = current ? current + '\n\n' + paragraph : paragraph;
+        }
+      }
+      if (current) chunks.push(current);
+
+      for (const chunk of chunks) {
+        await this.bot.sendMessage(externalChatId, chunk, { parse_mode: 'HTML' });
       }
     }
   }

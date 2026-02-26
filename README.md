@@ -1,6 +1,10 @@
-# Loop Gateway
+<p align="center">
+  <img src="assets/logo.svg" alt="Loop Gateway" width="200" />
+</p>
 
-An agentic AI loop gateway with multi-channel messaging support, container isolation, autonomous task execution, and a real-time web dashboard.
+<h1 align="center">Loop Gateway</h1>
+
+<p align="center">An agentic AI loop gateway with multi-channel messaging support, container isolation, autonomous task execution, and a real-time web dashboard.</p>
 
 Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude AI and runs agent interactions through a managed pipeline with conversation tracking, token usage analytics, and optional OS-level container isolation.
 
