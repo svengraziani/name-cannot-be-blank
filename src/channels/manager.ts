@@ -4,6 +4,7 @@ import { ChannelAdapter, IncomingMessage } from './base';
 import { TelegramAdapter, TelegramConfig } from './telegram';
 import { WhatsAppAdapter } from './whatsapp';
 import { EmailAdapter, EmailConfig } from './email';
+import { MattermostAdapter, MattermostConfig } from './mattermost';
 import {
   getAllChannels,
   upsertChannel,
@@ -158,6 +159,9 @@ async function startChannel(ch: ChannelRow): Promise<void> {
       break;
     case 'email':
       adapter = new EmailAdapter(ch.id, conf as EmailConfig);
+      break;
+    case 'mattermost':
+      adapter = new MattermostAdapter(ch.id, conf as MattermostConfig);
       break;
     default:
       throw new Error(`Unknown channel type: ${ch.type}`);

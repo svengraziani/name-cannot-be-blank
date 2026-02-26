@@ -2,7 +2,8 @@ import express from 'express';
 import expressWs from 'express-ws';
 import path from 'path';
 import { createApiRouter } from './api';
-import { channelManagerEvents } from '../channels/manager';
+import { channelManagerEvents, getChannelAdapter } from '../channels/manager';
+import { MattermostAdapter } from '../channels/mattermost';
 import { agentEvents } from '../agent/loop';
 import { containerEvents } from '../agent/container-runner';
 import { loopEvents } from '../agent/loop-mode';
@@ -17,6 +18,17 @@ export function createServer() {
   const wsInstance = expressWs(app);
 
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
+
+  // Mattermost webhook (outside auth - Mattermost verifies via token)
+  app.post('/webhook/mattermost/:channelId', (req, res) => {
+    const adapter = getChannelAdapter(req.params.channelId);
+    if (!adapter || !(adapter instanceof MattermostAdapter)) {
+      res.status(404).json({ text: 'Channel not found' });
+      return;
+    }
+    adapter.handleSlashCommand(req, res);
+  });
 
   // Rate limiting on API endpoints
   app.use('/api', rateLimitMiddleware(120, 60));

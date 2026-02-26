@@ -66,6 +66,7 @@
     .channel-icon.telegram { background: #229ed920; color: #229ed9; }
     .channel-icon.whatsapp { background: #25d36620; color: #25d366; }
     .channel-icon.email { background: #ea433520; color: #ea4335; }
+    .channel-icon.mattermost { background: #00639920; color: #006399; }
     .channel-name { font-weight: 500; font-size: 14px; }
     .channel-status { font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 6px; }
     .channel-actions { display: flex; gap: 8px; }
@@ -370,11 +371,12 @@
   <div class="modal-overlay hidden" id="addChannelModal">
     <div class="modal">
       <h3>Add Channel</h3>
-      <div class="form-group"><label>Channel Type</label><select id="chType" onchange="updateChannelForm()"><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option><option value="email">Email</option></select></div>
+      <div class="form-group"><label>Channel Type</label><select id="chType" onchange="updateChannelForm()"><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option><option value="email">Email</option><option value="mattermost">Mattermost</option></select></div>
       <div class="form-group"><label>Name</label><input id="chName" placeholder="e.g. My Telegram Bot" /></div>
       <div id="telegramFields"><div class="form-group"><label>Bot Token (from @BotFather)</label><input id="chTgToken" placeholder="123456789:ABCdef..." /></div><div class="form-group"><label>Allowed User IDs (comma-separated, empty = all)</label><input id="chTgUsers" placeholder="123456,789012" /></div></div>
       <div id="whatsappFields" style="display:none;"><p style="color:var(--text2);font-size:13px;">WhatsApp will show a QR code after creation. Scan it with your phone to connect.</p></div>
       <div id="emailFields" style="display:none;"><div class="form-group"><label>IMAP Host</label><input id="chEmailImapHost" placeholder="imap.gmail.com" /></div><div class="form-group"><label>IMAP Port</label><input id="chEmailImapPort" value="993" type="number" /></div><div class="form-group"><label>Email User</label><input id="chEmailUser" placeholder="you@example.com" /></div><div class="form-group"><label>Email Password</label><input id="chEmailPass" type="password" placeholder="App password" /></div><div class="form-group"><label>SMTP Host</label><input id="chEmailSmtpHost" placeholder="smtp.gmail.com" /></div><div class="form-group"><label>SMTP Port</label><input id="chEmailSmtpPort" value="587" type="number" /></div><div class="form-group"><label>Allowed Senders (comma-separated, empty = all)</label><input id="chEmailSenders" placeholder="trusted@example.com" /></div></div>
+      <div id="mattermostFields" style="display:none;"><div class="form-group"><label>Verification Token (from Slash Command config)</label><input id="chMmToken" placeholder="Slash command token" /></div><div class="form-group"><label>Incoming Webhook URL (optional, for proactive messages)</label><input id="chMmWebhookUrl" placeholder="https://mattermost.example.com/hooks/..." /></div></div>
       <div class="modal-actions"><button class="btn" onclick="closeModal('addChannelModal')">Cancel</button><button class="btn primary" onclick="submitChannel()">Create Channel</button></div>
     </div>
   </div>
@@ -698,7 +700,7 @@
       list.innerHTML = channels.map(ch => `<div class="channel-item"><div class="channel-info"><div class="channel-icon ${ch.type}">${channelIcon(ch.type)}</div><div><div class="channel-name">${escHtml(ch.name)}</div><div class="channel-status"><span class="status-dot ${ch.status}"></span>${ch.status}</div></div></div><div class="channel-actions"><button class="btn sm ${ch.enabled ? 'danger' : ''}" onclick="toggleChannel('${ch.id}', ${!ch.enabled})">${ch.enabled ? 'Disable' : 'Enable'}</button><button class="btn sm danger" onclick="deleteChannel('${ch.id}')">Delete</button></div></div>`).join('');
     }
 
-    function channelIcon(type) { return type === 'telegram' ? '&#9992;' : type === 'whatsapp' ? '&#9742;' : type === 'email' ? '&#9993;' : '&#9672;'; }
+    function channelIcon(type) { return type === 'telegram' ? '&#9992;' : type === 'whatsapp' ? '&#9742;' : type === 'email' ? '&#9993;' : type === 'mattermost' ? '&#9881;' : '&#9672;'; }
 
     async function updateDashboardStats() {
       document.getElementById('statChannels').textContent = channels.filter(c => c.status === 'connected').length;
@@ -719,7 +721,7 @@
     // === Channel Modal ===
     function openAddChannel() { document.getElementById('addChannelModal').classList.remove('hidden'); updateChannelForm(); }
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-    function updateChannelForm() { const t = document.getElementById('chType').value; document.getElementById('telegramFields').style.display = t==='telegram'?'block':'none'; document.getElementById('whatsappFields').style.display = t==='whatsapp'?'block':'none'; document.getElementById('emailFields').style.display = t==='email'?'block':'none'; }
+    function updateChannelForm() { const t = document.getElementById('chType').value; document.getElementById('telegramFields').style.display = t==='telegram'?'block':'none'; document.getElementById('whatsappFields').style.display = t==='whatsapp'?'block':'none'; document.getElementById('emailFields').style.display = t==='email'?'block':'none'; document.getElementById('mattermostFields').style.display = t==='mattermost'?'block':'none'; }
 
     async function submitChannel() {
       const type = document.getElementById('chType').value;
@@ -727,6 +729,7 @@
       let config = {};
       if (type === 'telegram') config = { botToken: document.getElementById('chTgToken').value, allowedUsers: document.getElementById('chTgUsers').value.split(',').map(s=>s.trim()).filter(Boolean) };
       else if (type === 'email') config = { imapHost:document.getElementById('chEmailImapHost').value, imapPort:parseInt(document.getElementById('chEmailImapPort').value)||993, imapUser:document.getElementById('chEmailUser').value, imapPass:document.getElementById('chEmailPass').value, smtpHost:document.getElementById('chEmailSmtpHost').value, smtpPort:parseInt(document.getElementById('chEmailSmtpPort').value)||587, smtpUser:document.getElementById('chEmailUser').value, smtpPass:document.getElementById('chEmailPass').value, pollIntervalMs:30000, allowedSenders:document.getElementById('chEmailSenders').value.split(',').map(s=>s.trim()).filter(Boolean) };
+      else if (type === 'mattermost') config = { token: document.getElementById('chMmToken').value, webhookUrl: document.getElementById('chMmWebhookUrl').value || undefined };
       try { await apiFetch('/api/channels', { method:'POST', body:JSON.stringify({type,name,config}) }); closeModal('addChannelModal'); refreshChannels(); } catch(e) { alert('Error: '+e.message); }
     }
 
