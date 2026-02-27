@@ -60,6 +60,10 @@ function getWorkspace(id: string): Workspace | undefined {
     removeWorkspace(id);
     return undefined;
   }
+  // Touch: refresh TTL so active workspaces don't expire mid-use
+  if (ws) {
+    ws.createdAt = Date.now();
+  }
   return ws;
 }
 

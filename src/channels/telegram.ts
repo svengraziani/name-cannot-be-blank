@@ -21,13 +21,22 @@ function markdownToTelegramHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-  // Code blocks (``` ... ```) - must be before inline code
+  // Code blocks (``` ... ```) - extract to placeholders so inline
+  // conversions (bold, italic, etc.) don't corrupt their content.
+  const codeBlocks: string[] = [];
   result = result.replace(/```(\w*)\n?([\s\S]*?)```/g, (_m, _lang, code) => {
-    return `<pre>${code.trim()}</pre>`;
+    const idx = codeBlocks.length;
+    codeBlocks.push(`<pre>${code.trim()}</pre>`);
+    return `\x00CB${idx}\x00`;
   });
 
-  // Inline code (`...`)
-  result = result.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Inline code (`...`) - also protect from further conversion
+  const inlineCodes: string[] = [];
+  result = result.replace(/`([^`]+)`/g, (_m, code) => {
+    const idx = inlineCodes.length;
+    inlineCodes.push(`<code>${code}</code>`);
+    return `\x00IC${idx}\x00`;
+  });
 
   // Bold + Italic (***text*** or ___text___)
   result = result.replace(/\*\*\*(.+?)\*\*\*/g, '<b><i>$1</i></b>');
@@ -51,6 +60,12 @@ function markdownToTelegramHtml(text: string): string {
   result = result.replace(/^(?:&gt;)\s?(.+)$/gm, '<blockquote>$1</blockquote>');
   // Merge consecutive blockquotes
   result = result.replace(/<\/blockquote>\n<blockquote>/g, '\n');
+
+  // Restore inline code placeholders
+  result = result.replace(/\x00IC(\d+)\x00/g, (_m, idx) => inlineCodes[Number(idx)]);
+
+  // Restore code block placeholders
+  result = result.replace(/\x00CB(\d+)\x00/g, (_m, idx) => codeBlocks[Number(idx)]);
 
   return result;
 }
@@ -191,11 +206,11 @@ export class TelegramAdapter extends ChannelAdapter {
 
     // Split long messages (Telegram limit: 4096 chars)
     const maxLen = 4000;
+    const chunks: string[] = [];
     if (html.length <= maxLen) {
-      await this.bot.sendMessage(externalChatId, html, { parse_mode: 'HTML' });
+      chunks.push(html);
     } else {
       // Split on double newlines to avoid breaking mid-tag
-      const chunks: string[] = [];
       let current = '';
       for (const paragraph of html.split('\n\n')) {
         if (current.length + paragraph.length + 2 > maxLen) {
@@ -206,9 +221,23 @@ export class TelegramAdapter extends ChannelAdapter {
         }
       }
       if (current) chunks.push(current);
+    }
 
-      for (const chunk of chunks) {
+    for (const chunk of chunks) {
+      try {
         await this.bot.sendMessage(externalChatId, chunk, { parse_mode: 'HTML' });
+      } catch (err: unknown) {
+        // If Telegram rejects the HTML (malformed tags), fall back to plain text
+        const isParseError =
+          err instanceof Error &&
+          err.message.includes("can't parse entities");
+        if (isParseError) {
+          console.warn(`[telegram:${this.channelId}] HTML parse error, falling back to plain text`);
+          const plain = chunk.replace(/<[^>]+>/g, '');
+          await this.bot.sendMessage(externalChatId, plain);
+        } else {
+          throw err;
+        }
       }
     }
   }
