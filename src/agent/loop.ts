@@ -104,7 +104,7 @@ export async function processMessage(
     updateAgentRun(runId, { status: 'running' });
 
     // Build conversation context
-    const history = getConversationMessages(conversationId, 40);
+    const history = getConversationMessages(conversationId, 20);
     const messages: Anthropic.MessageParam[] = history.map((m) => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,

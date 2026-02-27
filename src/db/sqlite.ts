@@ -216,6 +216,20 @@ export function addMessage(
   return result.lastInsertRowid as number;
 }
 
+export function clearConversationMessages(conversationId: string): number {
+  const result = getDb()
+    .prepare('DELETE FROM messages WHERE conversation_id = ?')
+    .run(conversationId);
+  return result.changes;
+}
+
+export function countConversationMessages(conversationId: string): number {
+  const row = getDb()
+    .prepare('SELECT COUNT(*) as count FROM messages WHERE conversation_id = ?')
+    .get(conversationId) as { count: number };
+  return row.count;
+}
+
 // --- Agent run tracking ---
 
 export function createAgentRun(conversationId: string, inputMessageId: number): number {

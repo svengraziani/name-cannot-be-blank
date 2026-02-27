@@ -13,6 +13,8 @@ import {
   getOrCreateConversation,
   ChannelRow,
   getConversation,
+  clearConversationMessages,
+  countConversationMessages,
 } from '../db/sqlite';
 import { processMessage } from '../agent/loop';
 import { resolveAgentConfig, checkGroupBudget } from '../agent/groups/resolver';
@@ -211,6 +213,23 @@ async function startChannel(ch: ChannelRow): Promise<void> {
         return;
       }
       // --- End HITL commands ---
+
+      // --- Chat management commands ---
+      if (msg.text.match(/^\/reset$/i)) {
+        const convId = getOrCreateConversation(msg.channelId, msg.externalChatId, msg.chatTitle);
+        const deleted = clearConversationMessages(convId);
+        console.log(`[manager] Conversation reset by ${msg.sender}: ${deleted} message(s) cleared`);
+        await adapter.sendMessage(msg.externalChatId, `Conversation reset. ${deleted} message(s) cleared.`);
+        return;
+      }
+
+      if (msg.text.match(/^\/status$/i)) {
+        const convId = getOrCreateConversation(msg.channelId, msg.externalChatId, msg.chatTitle);
+        const count = countConversationMessages(convId);
+        await adapter.sendMessage(msg.externalChatId, `Conversation has ${count} message(s) in history.`);
+        return;
+      }
+      // --- End chat management commands ---
 
       const conversationId = getOrCreateConversation(msg.channelId, msg.externalChatId, msg.chatTitle);
 
