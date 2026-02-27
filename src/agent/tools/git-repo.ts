@@ -116,12 +116,19 @@ function safePath(workspaceRoot: string, filePath: string): string {
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, {
-    cwd,
-    timeout: 60_000,
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  return stdout.trim();
+  try {
+    const { stdout } = await execFileAsync('git', args, {
+      cwd,
+      timeout: 60_000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return stdout.trim();
+  } catch (err: unknown) {
+    // execFile errors have stderr with the actual git error message
+    const e = err as Error & { stderr?: string; stdout?: string };
+    const detail = e.stderr || e.stdout || e.message;
+    throw new Error(detail.trim());
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -173,6 +180,8 @@ export const gitCloneTool: AgentTool = {
     const userName = (input.git_user_name as string) || 'Loop Agent';
     const userEmail = (input.git_user_email as string) || 'agent@loop-gateway.local';
 
+    console.log(`[git_clone] repoUrl=${repoUrl || '(empty)'}, branch=${branch}, hasToken=${!!token}, context.repo=${currentGitContext.githubRepo || '(none)'}, context.hasToken=${!!currentGitContext.githubToken}`);
+
     if (!repoUrl || !branch) {
       return { content: 'Error: repo_url and branch are required. Either pass repo_url or configure a GitHub repo on the agent group.', isError: true };
     }
@@ -223,6 +232,7 @@ export const gitCloneTool: AgentTool = {
       const msg = err instanceof Error ? err.message : String(err);
       // Sanitize token from error messages
       const safeMsg = msg.replace(new RegExp(token, 'g'), '***');
+      console.error(`[git_clone] Failed: ${safeMsg}`);
       return { content: `Error cloning repo: ${safeMsg}`, isError: true };
     }
   },
