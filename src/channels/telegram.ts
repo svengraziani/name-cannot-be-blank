@@ -62,10 +62,10 @@ function markdownToTelegramHtml(text: string): string {
   result = result.replace(/<\/blockquote>\n<blockquote>/g, '\n');
 
   // Restore inline code placeholders
-  result = result.replace(/\x00IC(\d+)\x00/g, (_m, idx) => inlineCodes[Number(idx)]);
+  result = result.replace(/\x00IC(\d+)\x00/g, (_m, idx) => inlineCodes[Number(idx)] ?? '');
 
   // Restore code block placeholders
-  result = result.replace(/\x00CB(\d+)\x00/g, (_m, idx) => codeBlocks[Number(idx)]);
+  result = result.replace(/\x00CB(\d+)\x00/g, (_m, idx) => codeBlocks[Number(idx)] ?? '');
 
   return result;
 }
