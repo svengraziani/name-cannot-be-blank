@@ -188,6 +188,12 @@ export function getOrCreateConversation(channelId: string, externalId: string, t
   return id;
 }
 
+export function getConversation(conversationId: string): { id: string; channelId: string; externalId: string } | undefined {
+  return getDb()
+    .prepare('SELECT id, channel_id as channelId, external_id as externalId FROM conversations WHERE id = ?')
+    .get(conversationId) as { id: string; channelId: string; externalId: string } | undefined;
+}
+
 export function getConversationMessages(conversationId: string, limit = 50): Array<{ role: string; content: string }> {
   return getDb()
     .prepare('SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?')

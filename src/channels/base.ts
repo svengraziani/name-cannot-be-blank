@@ -30,6 +30,19 @@ export abstract class ChannelAdapter extends EventEmitter {
   abstract disconnect(): Promise<void>;
   abstract sendMessage(externalChatId: string, text: string): Promise<void>;
 
+  /**
+   * Send an approval prompt with interactive buttons (if supported by channel).
+   * Default implementation sends a plain text message with /approve and /reject commands.
+   */
+  async sendApprovalPrompt(externalChatId: string, approvalId: string, toolName: string, riskLevel: string): Promise<void> {
+    await this.sendMessage(
+      externalChatId,
+      `**Approval required** (${riskLevel}): \`${toolName}\`\n\n` +
+        `/approve ${approvalId}\n` +
+        `/reject ${approvalId}`,
+    );
+  }
+
   /** Override to return channel-specific status info (e.g. QR code for WhatsApp) */
   getStatusInfo(): Record<string, unknown> {
     return {};

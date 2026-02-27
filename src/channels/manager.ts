@@ -12,16 +12,30 @@ import {
   deleteChannel as dbDeleteChannel,
   getOrCreateConversation,
   ChannelRow,
+  getConversation,
 } from '../db/sqlite';
 import { processMessage } from '../agent/loop';
 import { resolveAgentConfig, checkGroupBudget } from '../agent/groups/resolver';
 import { getSystemPrompt } from '../agent/loop';
+import { respondToApproval, approvalEvents } from '../agent/hitl';
 import { EventEmitter } from 'events';
 
 export const channelManagerEvents = new EventEmitter();
 
 // Active channel adapters
 const adapters = new Map<string, ChannelAdapter>();
+
+// Listen for approval requests and forward to the originating channel
+approvalEvents.on('approval:required', (approval: { id: string; conversationId: string; toolName: string; riskLevel: string }) => {
+  const conv = getConversation(approval.conversationId);
+  if (!conv) return;
+  const adapter = adapters.get(conv.channelId);
+  if (!adapter || adapter.status !== 'connected') return;
+
+  adapter.sendApprovalPrompt(conv.externalId, approval.id, approval.toolName, approval.riskLevel).catch((err) => {
+    console.error(`[manager] Failed to send approval prompt:`, err);
+  });
+});
 
 /**
  * Initialize channels from database on startup.
@@ -177,6 +191,26 @@ async function startChannel(ch: ChannelRow): Promise<void> {
   adapter.on('message', (msg: IncomingMessage) => {
     void (async () => {
       console.log(`[manager] Message from ${msg.channelType}/${msg.sender}: ${msg.text.slice(0, 100)}`);
+
+      // --- HITL commands: /approve <id> and /reject <id> ---
+      const approveMatch = msg.text.match(/^\/approve\s+([0-9a-f-]{36})\s*(.*)?$/i);
+      const rejectMatch = !approveMatch && msg.text.match(/^\/reject\s+([0-9a-f-]{36})\s*(.*)?$/i);
+
+      if (approveMatch || rejectMatch) {
+        const isApprove = !!approveMatch;
+        const match = (approveMatch || rejectMatch) as RegExpMatchArray;
+        const approvalId = match[1] as string;
+        const reason = (match[2] as string | undefined)?.trim() || undefined;
+        const ok = respondToApproval(approvalId, isApprove, reason, msg.sender);
+        if (ok) {
+          console.log(`[manager] ${isApprove ? 'Approved' : 'Rejected'} ${approvalId} via ${msg.channelType} by ${msg.sender}`);
+          await adapter.sendMessage(msg.externalChatId, `${isApprove ? 'Approved' : 'Rejected'} ${approvalId.slice(0, 8)}...`);
+        } else {
+          await adapter.sendMessage(msg.externalChatId, `Approval ${approvalId.slice(0, 8)}... not found or already resolved.`);
+        }
+        return;
+      }
+      // --- End HITL commands ---
 
       const conversationId = getOrCreateConversation(msg.channelId, msg.externalChatId, msg.chatTitle);
 

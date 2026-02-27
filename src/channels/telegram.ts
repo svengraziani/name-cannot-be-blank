@@ -1,5 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { ChannelAdapter, IncomingMessage } from './base';
+import { respondToApproval } from '../agent/hitl';
 
 export interface TelegramConfig {
   botToken: string;
@@ -94,6 +95,54 @@ export class TelegramAdapter extends ChannelAdapter {
         this.emit('message', incoming);
       });
 
+      // Handle inline keyboard button presses (approve/reject)
+      this.bot.on('callback_query', async (query) => {
+        if (!query.data || !query.message) return;
+        const userId = String(query.from?.id || '');
+        if (this.conf.allowedUsers.length > 0 && !this.conf.allowedUsers.includes(userId)) {
+          return;
+        }
+
+        const [action, approvalId] = query.data.split(':');
+        if ((action === 'approve' || action === 'reject') && approvalId) {
+          const isApprove = action === 'approve';
+          const sender = query.from?.username || query.from?.first_name || userId;
+          const ok = respondToApproval(approvalId, isApprove, undefined, sender);
+
+          // Answer the callback to remove the loading spinner
+          await this.bot!.answerCallbackQuery(query.id, {
+            text: ok
+              ? `${isApprove ? 'Approved' : 'Rejected'}`
+              : 'Already resolved or not found',
+          });
+
+          // Update the message to show the result (remove buttons)
+          if (ok) {
+            const statusText = isApprove ? 'Approved' : 'Rejected';
+            try {
+              await this.bot!.editMessageReplyMarkup(
+                { inline_keyboard: [] },
+                {
+                  chat_id: query.message.chat.id,
+                  message_id: query.message.message_id,
+                },
+              );
+              await this.bot!.editMessageText(
+                `${(query.message as TelegramBot.Message & { text?: string }).text}\n\n<b>${statusText}</b> by ${sender}`,
+                {
+                  chat_id: query.message.chat.id,
+                  message_id: query.message.message_id,
+                  parse_mode: 'HTML',
+                },
+              );
+            } catch {
+              // ignore edit failures (message might be too old)
+            }
+          }
+          console.log(`[telegram:${this.channelId}] ${isApprove ? 'Approved' : 'Rejected'} ${approvalId} by ${sender}`);
+        }
+      });
+
       this.bot.on('polling_error', (err) => {
         console.error(`[telegram:${this.channelId}] Polling error:`, err.message);
       });
@@ -115,6 +164,24 @@ export class TelegramAdapter extends ChannelAdapter {
       this.bot = undefined;
     }
     this.setStatus('disconnected');
+  }
+
+  override async sendApprovalPrompt(externalChatId: string, approvalId: string, toolName: string, riskLevel: string): Promise<void> {
+    if (!this.bot) throw new Error('Telegram bot not connected');
+
+    const text = `<b>Approval required</b> [${riskLevel}]\nTool: <code>${toolName}</code>`;
+
+    await this.bot.sendMessage(externalChatId, text, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: 'Approve', callback_data: `approve:${approvalId}` },
+            { text: 'Reject', callback_data: `reject:${approvalId}` },
+          ],
+        ],
+      },
+    });
   }
 
   async sendMessage(externalChatId: string, text: string): Promise<void> {

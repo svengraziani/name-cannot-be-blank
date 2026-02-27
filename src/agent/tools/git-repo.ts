@@ -98,8 +98,10 @@ function resolveToken(input: Record<string, unknown>): string {
 function resolveRepoUrl(input: Record<string, unknown>): string {
   const explicit = input.repo_url as string | undefined;
   if (explicit) return explicit;
-  if (currentGitContext.githubRepo) {
-    return `https://github.com/${currentGitContext.githubRepo}`;
+  const repo = currentGitContext.githubRepo;
+  if (repo) {
+    // Accept both "owner/repo" and full URLs like "https://github.com/owner/repo"
+    return repo.startsWith('https://') ? repo : `https://github.com/${repo}`;
   }
   return '';
 }
