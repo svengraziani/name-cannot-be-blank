@@ -101,11 +101,24 @@ function resolveToken(input: Record<string, unknown>): string {
 
 function resolveRepoUrl(input: Record<string, unknown>): string {
   const explicit = input.repo_url as string | undefined;
+  const configuredRepo = currentGitContext.githubRepo;
+
+  // If agent passes an explicit URL but a repo is already configured, prefer
+  // the configured repo and warn — the agent likely confused research targets
+  // with the destination repo.
+  if (explicit && configuredRepo) {
+    const configuredNorm = configuredRepo.replace(/\.git$/, '').toLowerCase();
+    const explicitNorm = explicit.replace(/\.git$/, '').toLowerCase();
+    if (!explicitNorm.includes(configuredNorm) && !configuredNorm.includes(explicitNorm.split('/').slice(-2).join('/'))) {
+      const configuredUrl = configuredRepo.startsWith('https://') ? configuredRepo : `https://github.com/${configuredRepo}`;
+      console.warn(`[git_clone] Agent passed repo_url="${explicit}" but configured repo is "${configuredRepo}" — using configured repo`);
+      return configuredUrl;
+    }
+  }
+
   if (explicit) return explicit;
-  const repo = currentGitContext.githubRepo;
-  if (repo) {
-    // Accept both "owner/repo" and full URLs like "https://github.com/owner/repo"
-    return repo.startsWith('https://') ? repo : `https://github.com/${repo}`;
+  if (configuredRepo) {
+    return configuredRepo.startsWith('https://') ? configuredRepo : `https://github.com/${configuredRepo}`;
   }
   return '';
 }

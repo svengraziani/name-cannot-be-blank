@@ -22,7 +22,7 @@ export function initAgentGroupsSchema(): void {
       system_prompt TEXT NOT NULL,
       api_key_encrypted TEXT,
       model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
-      max_tokens INTEGER NOT NULL DEFAULT 8192,
+      max_tokens INTEGER NOT NULL DEFAULT 16384,
       skills TEXT NOT NULL DEFAULT '[]',
       roles TEXT NOT NULL DEFAULT '[]',
       container_mode INTEGER NOT NULL DEFAULT 0,
@@ -50,6 +50,9 @@ export function initAgentGroupsSchema(): void {
     db.exec(`ALTER TABLE api_calls ADD COLUMN agent_group_id TEXT`);
     console.log('[groups] Added agent_group_id column to api_calls table');
   }
+
+  // Migrate old groups with low max_tokens default
+  db.exec(`UPDATE agent_groups SET max_tokens = 16384 WHERE max_tokens <= 8192`);
 
   // Add github_repo and github_token_encrypted columns if they don't exist
   const groupColumns = db.pragma('table_info(agent_groups)') as Array<{ name: string }>;
@@ -124,7 +127,7 @@ export function createAgentGroup(input: CreateAgentGroupInput): AgentGroup {
     input.systemPrompt,
     apiKeyEncrypted,
     input.model || 'claude-sonnet-4-20250514',
-    input.maxTokens || 8192,
+    input.maxTokens || 16384,
     input.githubRepo || '',
     githubTokenEncrypted,
     JSON.stringify(input.skills || []),
