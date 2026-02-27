@@ -369,6 +369,8 @@ export function createApiRouter(): Router {
         ...g,
         apiKeyEncrypted: undefined,
         hasApiKey: !!g.apiKeyEncrypted,
+        githubTokenEncrypted: undefined,
+        hasGithubToken: !!g.githubTokenEncrypted,
       }));
       res.json(safe);
     } catch (err) {
@@ -386,6 +388,8 @@ export function createApiRouter(): Router {
         apiKey,
         model,
         maxTokens,
+        githubRepo,
+        githubToken,
         skills,
         roles,
         containerMode,
@@ -407,6 +411,8 @@ export function createApiRouter(): Router {
         apiKey,
         model,
         maxTokens,
+        githubRepo,
+        githubToken,
         skills,
         roles,
         containerMode,
@@ -420,6 +426,8 @@ export function createApiRouter(): Router {
         ...group,
         apiKeyEncrypted: undefined,
         hasApiKey: !!group.apiKeyEncrypted,
+        githubTokenEncrypted: undefined,
+        hasGithubToken: !!group.githubTokenEncrypted,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -438,6 +446,8 @@ export function createApiRouter(): Router {
         ...group,
         apiKeyEncrypted: undefined,
         hasApiKey: !!group.apiKeyEncrypted,
+        githubTokenEncrypted: undefined,
+        hasGithubToken: !!group.githubTokenEncrypted,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -452,6 +462,8 @@ export function createApiRouter(): Router {
         ...group,
         apiKeyEncrypted: undefined,
         hasApiKey: !!group.apiKeyEncrypted,
+        githubTokenEncrypted: undefined,
+        hasGithubToken: !!group.githubTokenEncrypted,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

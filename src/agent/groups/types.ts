@@ -13,6 +13,10 @@ export interface AgentGroup {
   model: string;
   maxTokens: number;
 
+  // GitHub integration (for git_clone / git_commit_push tools)
+  githubRepo: string; // e.g. "owner/repo"
+  githubTokenEncrypted?: string | null; // PAT, AES-256 encrypted
+
   // Budget (per group, 0 = unlimited)
   budgetMaxTokensDay: number;
   budgetMaxTokensMonth: number;
@@ -46,6 +50,8 @@ export interface CreateAgentGroupInput {
   apiKey?: string; // plain text, will be encrypted before storage
   model?: string;
   maxTokens?: number;
+  githubRepo?: string;
+  githubToken?: string; // plain text PAT, will be encrypted before storage
   budgetMaxTokensDay?: number;
   budgetMaxTokensMonth?: number;
   budgetAlertThreshold?: number;
@@ -62,6 +68,8 @@ export interface UpdateAgentGroupInput {
   apiKey?: string | null; // null = clear, use global
   model?: string;
   maxTokens?: number;
+  githubRepo?: string;
+  githubToken?: string | null; // null = clear, string = encrypt
   budgetMaxTokensDay?: number;
   budgetMaxTokensMonth?: number;
   budgetAlertThreshold?: number;

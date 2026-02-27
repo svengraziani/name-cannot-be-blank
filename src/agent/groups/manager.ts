@@ -51,6 +51,17 @@ export function initAgentGroupsSchema(): void {
     console.log('[groups] Added agent_group_id column to api_calls table');
   }
 
+  // Add github_repo and github_token_encrypted columns if they don't exist
+  const groupColumns = db.pragma('table_info(agent_groups)') as Array<{ name: string }>;
+  if (!groupColumns.some((c) => c.name === 'github_repo')) {
+    db.exec(`ALTER TABLE agent_groups ADD COLUMN github_repo TEXT DEFAULT ''`);
+    console.log('[groups] Added github_repo column to agent_groups table');
+  }
+  if (!groupColumns.some((c) => c.name === 'github_token_encrypted')) {
+    db.exec(`ALTER TABLE agent_groups ADD COLUMN github_token_encrypted TEXT`);
+    console.log('[groups] Added github_token_encrypted column to agent_groups table');
+  }
+
   console.log('[groups] Agent groups schema initialized');
 }
 
@@ -66,6 +77,8 @@ function rowToGroup(row: Record<string, unknown>): AgentGroup {
     apiKeyEncrypted: row.api_key_encrypted as string | null,
     model: row.model as string,
     maxTokens: row.max_tokens as number,
+    githubRepo: (row.github_repo as string) || '',
+    githubTokenEncrypted: row.github_token_encrypted as string | null,
     budgetMaxTokensDay: row.budget_max_tokens_day as number,
     budgetMaxTokensMonth: row.budget_max_tokens_month as number,
     budgetAlertThreshold: row.budget_alert_threshold as number,
@@ -89,14 +102,20 @@ export function createAgentGroup(input: CreateAgentGroupInput): AgentGroup {
     apiKeyEncrypted = encrypt(input.apiKey);
   }
 
+  let githubTokenEncrypted: string | null = null;
+  if (input.githubToken) {
+    githubTokenEncrypted = encrypt(input.githubToken);
+  }
+
   db.prepare(
     `
     INSERT INTO agent_groups (
       id, name, description, system_prompt, api_key_encrypted,
-      model, max_tokens, skills, roles,
+      model, max_tokens, github_repo, github_token_encrypted,
+      skills, roles,
       container_mode, max_concurrent_agents,
       budget_max_tokens_day, budget_max_tokens_month, budget_alert_threshold
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     id,
@@ -106,6 +125,8 @@ export function createAgentGroup(input: CreateAgentGroupInput): AgentGroup {
     apiKeyEncrypted,
     input.model || 'claude-sonnet-4-20250514',
     input.maxTokens || 8192,
+    input.githubRepo || '',
+    githubTokenEncrypted,
     JSON.stringify(input.skills || []),
     JSON.stringify(input.roles || []),
     input.containerMode ? 1 : 0,
@@ -187,6 +208,11 @@ export function updateAgentGroup(id: string, input: UpdateAgentGroupInput): Agen
     values.push(input.budgetAlertThreshold);
   }
 
+  if (input.githubRepo !== undefined) {
+    sets.push('github_repo = ?');
+    values.push(input.githubRepo);
+  }
+
   // Handle API key: null = clear, string = encrypt, undefined = no change
   if (input.apiKey === null) {
     sets.push('api_key_encrypted = ?');
@@ -194,6 +220,15 @@ export function updateAgentGroup(id: string, input: UpdateAgentGroupInput): Agen
   } else if (input.apiKey !== undefined) {
     sets.push('api_key_encrypted = ?');
     values.push(encrypt(input.apiKey));
+  }
+
+  // Handle GitHub token: null = clear, string = encrypt, undefined = no change
+  if (input.githubToken === null) {
+    sets.push('github_token_encrypted = ?');
+    values.push(null);
+  } else if (input.githubToken !== undefined) {
+    sets.push('github_token_encrypted = ?');
+    values.push(encrypt(input.githubToken));
   }
 
   values.push(id);
@@ -293,6 +328,21 @@ export function getAgentGroupStats(groupId: string): AgentGroupStats {
     activeAgents: 0, // TODO: track when A2A is implemented
     totalRuns: runsRow.total,
   };
+}
+
+/**
+ * Get the decrypted GitHub PAT for a group, or fall back to GITHUB_TOKEN env var.
+ */
+export function getGroupGithubToken(groupId: string): string {
+  const group = getAgentGroup(groupId);
+  if (group?.githubTokenEncrypted) {
+    try {
+      return decrypt(group.githubTokenEncrypted);
+    } catch (err) {
+      console.error(`[groups] Failed to decrypt GitHub token for group ${groupId}:`, err);
+    }
+  }
+  return process.env.GITHUB_TOKEN || '';
 }
 
 /**

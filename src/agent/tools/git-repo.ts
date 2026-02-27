@@ -19,6 +19,25 @@ import { config } from '../../config';
 const execFileAsync = promisify(execFile);
 
 /* ------------------------------------------------------------------ */
+/*  Git Context (set per-request by the agent loop)                    */
+/* ------------------------------------------------------------------ */
+
+interface GitContext {
+  githubRepo?: string;  // e.g. "owner/repo"
+  githubToken?: string; // decrypted PAT
+}
+
+let currentGitContext: GitContext = {};
+
+/**
+ * Set the git context for the current agent run.
+ * Called from the agent loop before tool execution starts.
+ */
+export function setGitContext(ctx: GitContext): void {
+  currentGitContext = ctx;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Workspace Manager                                                  */
 /* ------------------------------------------------------------------ */
 
@@ -73,7 +92,16 @@ export function cleanupStaleWorkspaces(): number {
 }
 
 function resolveToken(input: Record<string, unknown>): string {
-  return (input.github_token as string) || config.github.token;
+  return (input.github_token as string) || currentGitContext.githubToken || config.github.token;
+}
+
+function resolveRepoUrl(input: Record<string, unknown>): string {
+  const explicit = input.repo_url as string | undefined;
+  if (explicit) return explicit;
+  if (currentGitContext.githubRepo) {
+    return `https://github.com/${currentGitContext.githubRepo}`;
+  }
+  return '';
 }
 
 /**
@@ -103,13 +131,13 @@ async function git(cwd: string, args: string[]): Promise<string> {
 export const gitCloneTool: AgentTool = {
   name: 'git_clone',
   description:
-    'Clone a GitHub repository and create a working branch. Returns a workspace_id used by the other git tools. The token is embedded in the clone URL for authentication.',
+    'Clone a GitHub repository and create a working branch. Returns a workspace_id used by the other git tools. The token is embedded in the clone URL for authentication. If the agent group has a GitHub repo configured, repo_url and github_token can be omitted.',
   inputSchema: {
     type: 'object' as const,
     properties: {
       repo_url: {
         type: 'string',
-        description: 'GitHub repo URL, e.g. https://github.com/owner/repo',
+        description: 'GitHub repo URL, e.g. https://github.com/owner/repo. Optional if configured on the agent group.',
       },
       branch: {
         type: 'string',
@@ -128,7 +156,7 @@ export const gitCloneTool: AgentTool = {
         description: 'Git author email (default: "agent@loop-gateway.local")',
       },
     },
-    required: ['repo_url', 'branch'],
+    required: ['branch'],
   },
 
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
@@ -139,14 +167,14 @@ export const gitCloneTool: AgentTool = {
       }
     }
 
-    const repoUrl = input.repo_url as string;
+    const repoUrl = resolveRepoUrl(input);
     const branch = input.branch as string;
     const token = resolveToken(input);
     const userName = (input.git_user_name as string) || 'Loop Agent';
     const userEmail = (input.git_user_email as string) || 'agent@loop-gateway.local';
 
     if (!repoUrl || !branch) {
-      return { content: 'Error: repo_url and branch are required', isError: true };
+      return { content: 'Error: repo_url and branch are required. Either pass repo_url or configure a GitHub repo on the agent group.', isError: true };
     }
 
     if (!token) {

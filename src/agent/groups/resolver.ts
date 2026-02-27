@@ -12,6 +12,7 @@ import {
   getGroupForChannel,
   getAgentGroup,
   getGroupApiKey,
+  getGroupGithubToken,
   getGroupTokenUsageToday,
   getGroupTokenUsageMonth,
 } from './manager';
@@ -24,6 +25,8 @@ export interface ResolvedAgentConfig {
   enabledSkills?: string[];
   groupId?: string;
   containerMode: boolean;
+  githubRepo?: string;
+  githubToken?: string;
 }
 
 /**
@@ -53,6 +56,8 @@ export function resolveAgentConfig(channelId: string, defaultSystemPrompt: strin
     enabledSkills: group.skills.length > 0 ? group.skills : undefined,
     groupId: group.id,
     containerMode: group.containerMode,
+    githubRepo: group.githubRepo || undefined,
+    githubToken: getGroupGithubToken(group.id) || undefined,
   };
 }
 

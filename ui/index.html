@@ -403,6 +403,8 @@
       <div class="form-group"><label>Custom API Key (optional, leave blank for global key)</label><input id="groupApiKey" type="password" placeholder="sk-ant-..." /></div>
       <div class="form-group"><label>Max Tokens</label><input id="groupMaxTokens" type="number" value="4096" min="256" max="200000" /></div>
       <div class="form-group"><label>System Prompt (optional override)</label><textarea id="groupSystemPrompt" style="min-height:80px;" placeholder="Leave blank for global system prompt"></textarea></div>
+      <div class="form-group"><label>GitHub Repo (optional, e.g. owner/repo)</label><input id="groupGithubRepo" placeholder="owner/repo" /></div>
+      <div class="form-group"><label>GitHub Token (PAT, optional — falls back to GITHUB_TOKEN env var)</label><input id="groupGithubToken" type="password" placeholder="ghp_..." /></div>
       <div class="form-group"><label>Daily Token Budget (0 = unlimited)</label><input id="groupBudgetDay" type="number" value="0" min="0" /></div>
       <div class="form-group"><label>Monthly Token Budget (0 = unlimited)</label><input id="groupBudgetMonth" type="number" value="0" min="0" /></div>
       <div class="form-group"><label>Assign to Channel</label><select id="groupChannelAssign"><option value="">-- None --</option></select></div>
@@ -853,6 +855,10 @@
       apiKeyInput.placeholder = 'sk-ant-...';
       document.getElementById('groupMaxTokens').value = '4096';
       document.getElementById('groupSystemPrompt').value = '';
+      document.getElementById('groupGithubRepo').value = '';
+      const ghTokenInput = document.getElementById('groupGithubToken');
+      ghTokenInput.value = '';
+      ghTokenInput.placeholder = 'ghp_...';
       document.getElementById('groupBudgetDay').value = '0';
       document.getElementById('groupBudgetMonth').value = '0';
       populateGroupChannelSelect();
@@ -882,6 +888,10 @@
         apiKeyInput.placeholder = g.hasApiKey ? '(key set — leave blank to keep, enter new to replace)' : 'sk-ant-...';
         document.getElementById('groupMaxTokens').value = g.maxTokens;
         document.getElementById('groupSystemPrompt').value = g.systemPrompt || '';
+        document.getElementById('groupGithubRepo').value = g.githubRepo || '';
+        const ghTokenInput = document.getElementById('groupGithubToken');
+        ghTokenInput.value = '';
+        ghTokenInput.placeholder = g.hasGithubToken ? '(token set — leave blank to keep, enter new to replace)' : 'ghp_...';
         document.getElementById('groupBudgetDay').value = g.budgetMaxTokensDay || 0;
         document.getElementById('groupBudgetMonth').value = g.budgetMaxTokensMonth || 0;
         populateGroupChannelSelect(g.id);
@@ -897,11 +907,14 @@
         model: document.getElementById('groupModel').value,
         maxTokens: parseInt(document.getElementById('groupMaxTokens').value) || 4096,
         systemPrompt: document.getElementById('groupSystemPrompt').value,
+        githubRepo: document.getElementById('groupGithubRepo').value,
         budgetMaxTokensDay: parseInt(document.getElementById('groupBudgetDay').value) || 0,
         budgetMaxTokensMonth: parseInt(document.getElementById('groupBudgetMonth').value) || 0,
       };
       const apiKey = document.getElementById('groupApiKey').value;
       if (apiKey) data.apiKey = apiKey;
+      const githubToken = document.getElementById('groupGithubToken').value;
+      if (githubToken) data.githubToken = githubToken;
       if (!data.name) { alert('Name is required'); return; }
       try {
         let groupId;

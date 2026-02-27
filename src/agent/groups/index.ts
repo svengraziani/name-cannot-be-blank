@@ -22,4 +22,5 @@ export {
   getAgentGroupStats,
   getGroupTokenUsageToday,
   getGroupTokenUsageMonth,
+  getGroupGithubToken,
 } from './manager';

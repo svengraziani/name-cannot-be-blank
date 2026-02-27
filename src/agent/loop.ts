@@ -8,6 +8,7 @@ import { EventEmitter } from 'events';
 import { ResolvedAgentConfig } from './groups/resolver';
 import { setA2AContext } from './a2a';
 import { checkApprovalRequired, requestApproval } from './hitl';
+import { setGitContext } from './tools/git-repo';
 
 export const agentEvents = new EventEmitter();
 
@@ -122,6 +123,12 @@ export async function processMessage(
       groupId: agentConfig?.groupId || '',
       agentId: `agent-${runId}`,
       conversationId,
+    });
+
+    // Set Git context so git_clone can resolve repo/token from group config
+    setGitContext({
+      githubRepo: agentConfig?.githubRepo,
+      githubToken: agentConfig?.githubToken,
     });
 
     // Call Claude - either via container or directly
