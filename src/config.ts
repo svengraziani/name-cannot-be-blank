@@ -4,7 +4,7 @@ export const config = {
 
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
   agentModel: process.env.AGENT_MODEL || 'claude-sonnet-4-20250514',
-  agentMaxTokens: parseInt(process.env.AGENT_MAX_TOKENS || '8192', 10),
+  agentMaxTokens: parseInt(process.env.AGENT_MAX_TOKENS || '16384', 10),
   agentSystemPromptFile: process.env.AGENT_SYSTEM_PROMPT_FILE || '/data/system-prompt.md',
 
   dataDir: process.env.DATA_DIR || '/data',

@@ -243,7 +243,14 @@ async function callAgentDirect(
     // If no tool use, extract text and return
     if (response.stop_reason !== 'tool_use') {
       const textBlocks = response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text');
-      const content = textBlocks.map((b) => b.text).join('\n');
+      let content = textBlocks.map((b) => b.text).join('\n');
+
+      // If we hit the token limit mid-generation, the response is truncated.
+      // Log a warning so we can diagnose, and append a note for the user.
+      if (response.stop_reason === 'max_tokens') {
+        console.warn(`[agent] Response truncated at max_tokens (${maxTokens}) on iteration ${iteration}, tool calls so far: ${totalToolCalls}`);
+        content += '\n\n(Response was cut short due to length limits. Please try a shorter or simpler request.)';
+      }
 
       return {
         content: content || '(no response)',
