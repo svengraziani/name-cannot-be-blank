@@ -78,6 +78,78 @@ const BUILTIN_SKILLS: SkillManifest[] = [
     handler: './handler.js',
     containerCompatible: true,
   },
+  {
+    name: 'git_clone',
+    description:
+      'Clone a GitHub repository and create a working branch. Returns a workspace_id used by the other git tools.',
+    version: '1.0.0',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo_url: { type: 'string', description: 'GitHub repo URL, e.g. https://github.com/owner/repo' },
+        branch: { type: 'string', description: 'Branch name to create and check out' },
+        github_token: { type: 'string', description: 'GitHub personal access token (falls back to GITHUB_TOKEN env var)' },
+        git_user_name: { type: 'string', description: 'Git author name (default: "Loop Agent")' },
+        git_user_email: { type: 'string', description: 'Git author email (default: "agent@loop-gateway.local")' },
+      },
+      required: ['repo_url', 'branch'],
+    },
+    handler: './handler.js',
+    containerCompatible: false,
+  },
+  {
+    name: 'git_read_file',
+    description:
+      'Read a file or list a directory in a cloned git workspace.',
+    version: '1.0.0',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace_id: { type: 'string', description: 'Workspace ID returned by git_clone' },
+        path: { type: 'string', description: 'Relative path within the repo' },
+      },
+      required: ['workspace_id', 'path'],
+    },
+    handler: './handler.js',
+    containerCompatible: false,
+  },
+  {
+    name: 'git_write_file',
+    description:
+      'Write or create a file in a cloned git workspace and auto-stage it (git add).',
+    version: '1.0.0',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace_id: { type: 'string', description: 'Workspace ID returned by git_clone' },
+        path: { type: 'string', description: 'Relative file path within the repo' },
+        content: { type: 'string', description: 'The file content to write' },
+      },
+      required: ['workspace_id', 'path', 'content'],
+    },
+    handler: './handler.js',
+    containerCompatible: false,
+  },
+  {
+    name: 'git_commit_push',
+    description:
+      'Commit all staged changes, push to remote, and optionally create a GitHub Pull Request.',
+    version: '1.0.0',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace_id: { type: 'string', description: 'Workspace ID returned by git_clone' },
+        message: { type: 'string', description: 'Commit message' },
+        create_pr: { type: 'boolean', description: 'If true, create a Pull Request after pushing' },
+        pr_title: { type: 'string', description: 'PR title (defaults to commit message)' },
+        pr_body: { type: 'string', description: 'PR body/description' },
+        pr_base: { type: 'string', description: 'Base branch for the PR (default: "main")' },
+      },
+      required: ['workspace_id', 'message'],
+    },
+    handler: './handler.js',
+    containerCompatible: false,
+  },
 ];
 
 const BUILTIN_HANDLER_STUB = `// Built-in skill - execution is handled natively by the gateway.

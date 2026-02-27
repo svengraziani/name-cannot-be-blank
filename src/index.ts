@@ -8,6 +8,7 @@ import { initAgentGroupsSchema } from './agent/groups';
 import { initA2ASchema } from './agent/a2a';
 import { initSchedulerSchema, startScheduler, startCalendarPolling } from './scheduler';
 import { initHitlSchema, expireStaleApprovals } from './agent/hitl';
+import { cleanupStaleWorkspaces } from './agent/tools/git-repo';
 
 async function main() {
   console.log('='.repeat(50));
@@ -69,6 +70,14 @@ async function main() {
       console.log(`[hitl] Expired ${expired} stale approval(s)`);
     }
   }, 60_000);
+
+  // Periodic cleanup of stale git workspaces (every 5 min)
+  setInterval(() => {
+    const cleaned = cleanupStaleWorkspaces();
+    if (cleaned > 0) {
+      console.log(`[git] Cleaned up ${cleaned} stale workspace(s)`);
+    }
+  }, 5 * 60_000);
 
   // Start listening
   app.listen(config.port, config.host, () => {

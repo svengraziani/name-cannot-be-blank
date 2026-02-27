@@ -52,6 +52,10 @@ export const DEFAULT_TOOL_RISK: Record<string, RiskLevel> = {
   delegate_task: 'medium',
   broadcast_event: 'low',
   query_agents: 'low',
+  git_clone: 'medium',
+  git_read_file: 'low',
+  git_write_file: 'medium',
+  git_commit_push: 'high',
 };
 
 /** Default timeout in seconds per risk level */

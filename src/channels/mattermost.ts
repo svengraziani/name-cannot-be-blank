@@ -86,6 +86,12 @@ export class MattermostAdapter extends ChannelAdapter {
       return;
     }
 
+    // Reject empty messages (e.g. user typed just the slash command with no text)
+    if (!text.trim()) {
+      res.json({ text: 'Please provide a message, e.g. `/ask hello`' });
+      return;
+    }
+
     // Store response_url for async reply
     if (response_url) {
       this.responseUrls.set(channel_id, response_url);

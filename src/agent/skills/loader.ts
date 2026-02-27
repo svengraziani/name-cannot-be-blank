@@ -149,7 +149,7 @@ export function scanSkills(): SkillDefinition[] {
       skills.push({
         manifest,
         dirPath: skillDir,
-        builtIn: manifest.name === 'web_browse' || manifest.name === 'run_script' || manifest.name === 'http_request',
+        builtIn: manifest.name === 'web_browse' || manifest.name === 'run_script' || manifest.name === 'http_request' || manifest.name === 'git_clone' || manifest.name === 'git_read_file' || manifest.name === 'git_write_file' || manifest.name === 'git_commit_push',
         enabled: isEnabled,
       });
     } catch (err) {

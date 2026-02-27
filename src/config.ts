@@ -22,6 +22,10 @@ export const config = {
     enabled: process.env.WHATSAPP_ENABLED === 'true',
   },
 
+  github: {
+    token: process.env.GITHUB_TOKEN || '',
+  },
+
   email: {
     imapHost: process.env.EMAIL_IMAP_HOST || '',
     imapPort: parseInt(process.env.EMAIL_IMAP_PORT || '993', 10),
