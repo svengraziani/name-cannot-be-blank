@@ -319,7 +319,7 @@ async function callAgentDirect(
 
         const result = await toolRegistry.execute(block.name, toolInput);
 
-        console.log(`[agent] Tool result: ${result.isError ? 'ERROR' : 'OK'} (${result.content.length} chars)`);
+        console.log(`[agent] Tool result: ${result.isError ? 'ERROR' : 'OK'} (${result.content.length} chars)${result.isError ? ' — ' + result.content.slice(0, 500) : ''}`);
         agentEvents.emit('tool:result', {
           runId,
           iteration,
