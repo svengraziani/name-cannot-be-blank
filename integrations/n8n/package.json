@@ -1,0 +1,42 @@
+{
+  "name": "n8n-nodes-loop-gateway",
+  "version": "1.0.0",
+  "description": "n8n community nodes for Loop Gateway – agentic AI automation platform",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "loop-gateway",
+    "ai",
+    "agent",
+    "claude",
+    "automation",
+    "webhook"
+  ],
+  "license": "MIT",
+  "main": "index.js",
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/LoopGatewayApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/LoopGateway/LoopGateway.node.js",
+      "dist/nodes/LoopGateway/LoopGatewayTrigger.node.js"
+    ]
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "n8n-workflow": "^1.0.0",
+    "typescript": "^5.6.0"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}

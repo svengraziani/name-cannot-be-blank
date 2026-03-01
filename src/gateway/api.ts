@@ -65,6 +65,17 @@ import {
   stopCalendarPoll,
   formatTriggerDescription,
 } from '../scheduler';
+import {
+  createWebhook,
+  getAllWebhooks,
+  getWebhook,
+  updateWebhook,
+  deleteWebhook,
+  getWebhookLogs,
+  WEBHOOK_EVENTS,
+} from '../webhooks';
+import { v4 as uuidv4 } from 'uuid';
+import { randomBytes } from 'crypto';
 
 export function createApiRouter(): Router {
   const router = Router();
@@ -841,6 +852,102 @@ export function createApiRouter(): Router {
         return;
       }
       res.json({ status: 'deleted' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== Webhooks ====================
+
+  router.get('/webhooks', (_req: Request, res: Response) => {
+    try {
+      const webhooks = getAllWebhooks();
+      res.json(webhooks);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/webhooks', (req: Request, res: Response) => {
+    try {
+      const { name, events, targetUrl, platform, agentGroupId } = req.body;
+      if (!name) {
+        res.status(400).json({ error: 'name is required' });
+        return;
+      }
+
+      const id = uuidv4();
+      const token = randomBytes(32).toString('hex');
+      const webhook = createWebhook({
+        id,
+        name,
+        token,
+        events: events || ['*'],
+        targetUrl,
+        platform: platform || 'generic',
+        agentGroupId,
+      });
+
+      res.json(webhook);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/webhooks/events', (_req: Request, res: Response) => {
+    res.json({ events: WEBHOOK_EVENTS });
+  });
+
+  router.get('/webhooks/:id', (req: Request, res: Response) => {
+    try {
+      const webhook = getWebhook(req.params.id as string);
+      if (!webhook) {
+        res.status(404).json({ error: 'Webhook not found' });
+        return;
+      }
+      res.json(webhook);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.put('/webhooks/:id', (req: Request, res: Response) => {
+    try {
+      const webhook = updateWebhook(req.params.id as string, req.body);
+      if (!webhook) {
+        res.status(404).json({ error: 'Webhook not found' });
+        return;
+      }
+      res.json(webhook);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  });
+
+  router.delete('/webhooks/:id', (req: Request, res: Response) => {
+    try {
+      const deleted = deleteWebhook(req.params.id as string);
+      if (!deleted) {
+        res.status(404).json({ error: 'Webhook not found' });
+        return;
+      }
+      res.json({ status: 'deleted' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/webhooks/:id/logs', (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const logs = getWebhookLogs(req.params.id as string, limit);
+      res.json(logs);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });

@@ -1,0 +1,77 @@
+{
+  "name": "Loop Gateway – Agent to Google Sheets",
+  "flow": [
+    {
+      "id": 1,
+      "module": "google-sheets:watchRows",
+      "version": 2,
+      "parameters": {
+        "sheetId": "YOUR_SHEET_ID",
+        "includesHeaders": true,
+        "limit": 1
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": { "x": 0, "y": 0 },
+        "restore": {
+          "sheetId": { "label": "Your Spreadsheet" }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "module": "http:ActionSendData",
+      "version": 3,
+      "parameters": {},
+      "mapper": {
+        "url": "https://YOUR_LOOP_GATEWAY_URL/webhook/invoke/YOUR_WEBHOOK_TOKEN",
+        "method": "post",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "bodyType": "raw",
+        "parseResponse": true,
+        "contentType": "application/json",
+        "body": "{\"message\": \"{{1.col_A}}\", \"sync\": true}"
+      },
+      "metadata": {
+        "designer": { "x": 300, "y": 0 }
+      }
+    },
+    {
+      "id": 3,
+      "module": "google-sheets:addRow",
+      "version": 2,
+      "parameters": {
+        "sheetId": "YOUR_OUTPUT_SHEET_ID",
+        "includesHeaders": true
+      },
+      "mapper": {
+        "col_A": "{{1.col_A}}",
+        "col_B": "{{2.data.response}}",
+        "col_C": "{{formatDate(now; \"YYYY-MM-DD HH:mm:ss\")}}"
+      },
+      "metadata": {
+        "designer": { "x": 600, "y": 0 },
+        "restore": {
+          "sheetId": { "label": "Output Spreadsheet" }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "version": 1,
+    "scenario": {
+      "roundtrips": 1,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "autoCommitTriggerLast": true
+    },
+    "designer": {
+      "orphans": []
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "name": "Loop Gateway – Run Agent",
+  "flow": [
+    {
+      "id": 1,
+      "module": "http:ActionSendData",
+      "version": 3,
+      "parameters": {},
+      "mapper": {
+        "url": "https://YOUR_LOOP_GATEWAY_URL/webhook/invoke/YOUR_WEBHOOK_TOKEN",
+        "method": "post",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "qs": [],
+        "bodyType": "raw",
+        "parseResponse": true,
+        "contentType": "application/json",
+        "body": "{\"message\": \"{{1.prompt}}\", \"sync\": true}"
+      },
+      "metadata": {
+        "designer": { "x": 0, "y": 0 },
+        "restore": {},
+        "expect": [
+          {
+            "name": "prompt",
+            "type": "text",
+            "label": "Prompt",
+            "required": true
+          }
+        ]
+      }
+    }
+  ],
+  "metadata": {
+    "version": 1,
+    "scenario": {
+      "roundtrips": 1,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "autoCommitTriggerLast": true
+    },
+    "designer": {
+      "orphans": []
+    }
+  }
+}
