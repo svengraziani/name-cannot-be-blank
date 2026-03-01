@@ -12,6 +12,7 @@ import { a2aEvents } from '../agent/a2a';
 import { schedulerEvents, calendarEvents } from '../scheduler';
 import { skillWatcherEvents } from '../agent/skills';
 import { approvalEvents, notifyApprovalRequired, notifyApprovalResolved } from '../agent/hitl';
+import { workflowEvents } from '../agent/workflows';
 
 export function createServer() {
   const app = express();
@@ -122,6 +123,14 @@ export function createServer() {
     void notifyApprovalResolved(data);
   });
   approvalEvents.on('approval:timeout', (data) => broadcast('approval:timeout', data));
+
+  // Forward workflow events
+  workflowEvents.on('workflow:start', (data) => broadcast('workflow:start', data));
+  workflowEvents.on('workflow:complete', (data) => broadcast('workflow:complete', data));
+  workflowEvents.on('workflow:error', (data) => broadcast('workflow:error', data));
+  workflowEvents.on('workflow:node:start', (data) => broadcast('workflow:node:start', data));
+  workflowEvents.on('workflow:node:complete', (data) => broadcast('workflow:node:complete', data));
+  workflowEvents.on('workflow:node:error', (data) => broadcast('workflow:node:error', data));
 
   // Fallback: serve UI for any non-API route
   app.get('*', (_req, res) => {

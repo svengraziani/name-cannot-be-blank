@@ -15,6 +15,7 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 - **Loop Mode** -- Autonomous task execution with prompt files (ralph-wiggum pattern: plan/build loops)
 - **Agent Groups** -- Group agents with per-group system prompts, model selection, skills, budgets (daily/monthly token caps), and channel binding
 - **Agent-to-Agent (A2A) Protocol** -- Multi-agent coordination with message bus, sub-agent spawning, predefined roles, task delegation, and broadcasting
+- **Workflow Builder** -- Declarative DAG-based agent pipelines. Define chains like Input → Classifier → Route to Support-Agent OR Order-Agent → Output. Built-in DAG validation, conditional routing, and real-time execution tracking
 - **Human-in-the-Loop (HITL)** -- Approval workflows with configurable risk levels per tool, auto-approve rules, timeouts, and real-time WebSocket notifications
 - **Skills System** -- Dynamic, file-based tool extensions. Built-in tools are exported as skills; custom skills can be uploaded, toggled, and hot-reloaded
 - **Built-in Agent Tools** -- Web browsing (Playwright), HTTP requests, script execution, and A2A tools (delegate, broadcast, query)
@@ -98,7 +99,16 @@ npm run dev
 │  - http-request    │ │  - Task delegation      │
 │  - run-script      │ │  - Event broadcasting   │
 │  - Custom skills   │ │  - Agent querying       │
-└────────────────────┘ └─────────────────────────┘
+└────────────────────┘ └──────────┬──────────────┘
+               │                  │
+               ▼                  ▼
+┌──────────────────────────────────────────────────┐
+│  Workflow Builder (DAG Engine)                   │
+│  - Declarative agent chains (Input → ... → Out) │
+│  - Classifier nodes for intelligent routing      │
+│  - Condition-based branching                     │
+│  - Real-time execution tracking via WebSocket    │
+└──────────────┬───────────────────────────────────┘
                │
                ▼
 ┌──────────────────────────────────────────────────┐
@@ -109,6 +119,7 @@ npm run dev
 │  - Approvals, approval rules                     │
 │  - Scheduled jobs, calendar events               │
 │  - Agent groups, A2A messages                    │
+│  - Workflows, workflow runs                      │
 └──────────────┬───────────────────────────────────┘
                │
                ▼
@@ -287,6 +298,84 @@ curl -X POST http://localhost:3000/api/tasks/1/stop \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
+## Workflow Builder (Agent Chains)
+
+Build declarative agent pipelines as directed acyclic graphs (DAGs). Each workflow defines a chain of processing nodes connected by edges. Messages flow through the graph from input to output, with optional classifier and condition nodes for intelligent routing.
+
+### Node Types
+
+| Type | Description |
+|------|-------------|
+| `input` | Entry point -- receives the trigger message |
+| `agent` | Runs an agent with a specific role or custom system prompt |
+| `classifier` | Uses Claude to classify input into categories for routing |
+| `condition` | Routes to different branches based on classifier output |
+| `output` | Sends the result to a channel or webhook |
+
+### Example: Support/Order Router
+
+```
+Channel Input → Classifier → Condition
+                                ├─ "support" → Support Agent → Output
+                                └─ "order"   → Order Agent   → Output
+```
+
+```bash
+curl -X POST http://localhost:3000/api/workflows \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "name": "customer-router",
+    "description": "Routes customer messages to support or order agents",
+    "triggerChannelIds": ["CHANNEL_ID"],
+    "nodes": [
+      { "id": "in", "type": "input", "label": "Customer Message" },
+      { "id": "classify", "type": "classifier", "label": "Intent Classifier", "config": {
+        "categories": [
+          { "name": "support", "description": "Customer needs help with an existing product or issue" },
+          { "name": "order", "description": "Customer wants to place or track an order" }
+        ]
+      }},
+      { "id": "cond", "type": "condition", "label": "Route by Intent", "config": {} },
+      { "id": "support-agent", "type": "agent", "label": "Support Agent", "config": {
+        "role": "builder",
+        "systemPrompt": "You are a customer support agent. Help resolve issues empathetically."
+      }},
+      { "id": "order-agent", "type": "agent", "label": "Order Agent", "config": {
+        "role": "builder",
+        "systemPrompt": "You are an order processing agent. Help with orders and tracking."
+      }},
+      { "id": "out", "type": "output", "label": "Reply to Customer", "config": {} }
+    ],
+    "edges": [
+      { "id": "e1", "from": "in", "to": "classify" },
+      { "id": "e2", "from": "classify", "to": "cond" },
+      { "id": "e3", "from": "cond", "to": "support-agent", "condition": "support" },
+      { "id": "e4", "from": "cond", "to": "order-agent", "condition": "order" },
+      { "id": "e5", "from": "support-agent", "to": "out" },
+      { "id": "e6", "from": "order-agent", "to": "out" }
+    ]
+  }'
+```
+
+### Execute a workflow manually
+
+```bash
+curl -X POST http://localhost:3000/api/workflows/WORKFLOW_ID/execute \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{ "input": "I have a problem with my last order #12345" }'
+```
+
+### Validate a workflow
+
+```bash
+curl -X POST http://localhost:3000/api/workflows/WORKFLOW_ID/validate \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+The validator checks for: missing input/output nodes, dangling edges, and cycles in the graph.
+
 ## API Reference
 
 All endpoints require authentication (session token) unless the system is in setup mode.
@@ -378,6 +467,23 @@ All endpoints require authentication (session token) unless the system is in set
 | GET | `/api/scheduler/calendars/:id/events` | Get calendar events |
 | DELETE | `/api/scheduler/calendars/:id` | Delete a calendar source |
 
+### Workflows
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/workflows` | List all workflows |
+| POST | `/api/workflows` | Create a workflow (validates DAG) |
+| GET | `/api/workflows/stats` | Workflow and run statistics |
+| GET | `/api/workflows/:id` | Get workflow details |
+| PUT | `/api/workflows/:id` | Update a workflow |
+| DELETE | `/api/workflows/:id` | Delete a workflow |
+| POST | `/api/workflows/:id/toggle` | Enable or disable a workflow |
+| POST | `/api/workflows/:id/execute` | Trigger a workflow with input |
+| POST | `/api/workflows/:id/validate` | Validate workflow DAG |
+| GET | `/api/workflows/:id/runs` | Workflow execution history |
+| GET | `/api/workflows/runs/:runId` | Get details of a specific run |
+| POST | `/api/workflows/runs/:runId/cancel` | Cancel a running workflow |
+
 ### Usage Analytics
 
 | Method | Endpoint | Description |
@@ -457,6 +563,10 @@ All endpoints require authentication (session token) unless the system is in set
 │   │   │   ├── schema.ts           # Skill manifest schema
 │   │   │   ├── watcher.ts          # File-system hot reload
 │   │   │   └── builtin-exporter.ts # Export built-in tools as skills
+│   │   ├── workflows/              # Workflow Builder (DAG pipelines)
+│   │   │   ├── engine.ts           # DAG execution engine
+│   │   │   ├── db.ts               # Workflow persistence + run tracking
+│   │   │   └── types.ts            # Node, edge, workflow type definitions
 │   │   └── tools/                  # Built-in agent tools
 │   │       ├── registry.ts         # Tool registry
 │   │       ├── web-browse.ts       # Playwright web browsing
