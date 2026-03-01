@@ -18,6 +18,7 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 - **Human-in-the-Loop (HITL)** -- Approval workflows with configurable risk levels per tool, auto-approve rules, timeouts, and real-time WebSocket notifications
 - **Skills System** -- Dynamic, file-based tool extensions. Built-in tools are exported as skills; custom skills can be uploaded, toggled, and hot-reloaded
 - **Built-in Agent Tools** -- Web browsing (Playwright), HTTP requests, script execution, and A2A tools (delegate, broadcast, query)
+- **Time Awareness** -- Agent knows current time, day of week, and holidays (via iCal). Behavioral hints adapt responses based on context (e.g. shorter answers on Friday evenings, holiday-aware delivery times)
 - **Scheduler** -- Cron-based job scheduling with iCal calendar integration and output routing to channels or webhooks
 - **Usage Analytics** -- Per-call token tracking, cost estimation, daily/model breakdowns
 - **Auth & Rate Limiting** -- Session-based login, admin setup flow, IP-based rate limiting
@@ -254,6 +255,36 @@ curl -X POST http://localhost:3000/api/scheduler/calendars \
   }'
 ```
 
+## Time Awareness
+
+The agent automatically receives temporal context with every message -- current time, day of week, and holidays detected from your iCal calendars. This enables context-aware responses:
+
+- **Friday 17:30** -- "The user probably wants a quick answer, not a lengthy analysis."
+- **Public holiday in Austria** -- "Delivery times and business hours may differ."
+- **Late night** -- Keep responses compact unless explicitly asked for detail.
+- **Monday morning** -- The user is likely starting their work day.
+
+Time awareness is enabled by default and reads holidays from all configured iCal calendar sources.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TIME_AWARENESS_ENABLED` | `true` | Enable/disable time context injection |
+| `TIME_AWARENESS_TIMEZONE` | `Europe/Vienna` | IANA timezone for time calculations |
+
+### How it works
+
+On every agent call, a `## Zeitkontext (Time Awareness)` block is appended to the system prompt with:
+
+- Current date, time, and day of week (in the configured timezone)
+- Whether it's a workday or weekend
+- Holidays detected from iCal calendar events (matched by keywords like "Feiertag", "Holiday", "Weihnachten", etc.)
+- Today's upcoming calendar events
+- Behavioral hints based on the temporal context
+
+The agent uses this information to adapt tone and content -- for example, preferring concise answers on Friday evenings or flagging that delivery times may be affected on holidays.
+
 ## Loop Mode (Autonomous Tasks)
 
 Create tasks that run in an autonomous loop. The agent reads a prompt, produces output, and repeats -- building on previous output each iteration -- until it signals completion or hits the iteration limit.
@@ -435,6 +466,7 @@ All endpoints require authentication (session token) unless the system is in set
 │   ├── config.ts                   # Environment configuration
 │   ├── agent/
 │   │   ├── loop.ts                 # Agent loop (direct + container modes)
+│   │   ├── time-awareness.ts      # Time/date/holiday context for agent
 │   │   ├── container-runner.ts     # Docker container spawning
 │   │   ├── loop-mode.ts            # Autonomous task loop
 │   │   ├── a2a/                    # Agent-to-Agent protocol
