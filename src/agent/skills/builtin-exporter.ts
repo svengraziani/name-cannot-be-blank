@@ -17,7 +17,7 @@ const BUILTIN_SKILLS: SkillManifest[] = [
   {
     name: 'web_browse',
     description:
-      'Browse web pages using a real browser (Playwright/Chromium). Supports navigating to URLs, extracting page content, clicking elements, filling forms, and executing JavaScript.',
+      'Browse web pages using a stealth browser (Scrapling/Camoufox) that avoids bot detection. Supports navigating to URLs, extracting page content, clicking elements, filling forms, and executing JavaScript.',
     version: '1.0.0',
     inputSchema: {
       type: 'object',
@@ -88,7 +88,10 @@ const BUILTIN_SKILLS: SkillManifest[] = [
       properties: {
         repo_url: { type: 'string', description: 'GitHub repo URL, e.g. https://github.com/owner/repo' },
         branch: { type: 'string', description: 'Branch name to create and check out' },
-        github_token: { type: 'string', description: 'GitHub personal access token (falls back to GITHUB_TOKEN env var)' },
+        github_token: {
+          type: 'string',
+          description: 'GitHub personal access token (falls back to GITHUB_TOKEN env var)',
+        },
         git_user_name: { type: 'string', description: 'Git author name (default: "Loop Agent")' },
         git_user_email: { type: 'string', description: 'Git author email (default: "agent@loop-gateway.local")' },
       },
@@ -99,8 +102,7 @@ const BUILTIN_SKILLS: SkillManifest[] = [
   },
   {
     name: 'git_read_file',
-    description:
-      'Read a file or list a directory in a cloned git workspace.',
+    description: 'Read a file or list a directory in a cloned git workspace.',
     version: '1.0.0',
     inputSchema: {
       type: 'object',
@@ -115,8 +117,7 @@ const BUILTIN_SKILLS: SkillManifest[] = [
   },
   {
     name: 'git_write_file',
-    description:
-      'Write or create a file in a cloned git workspace and auto-stage it (git add).',
+    description: 'Write or create a file in a cloned git workspace and auto-stage it (git add).',
     version: '1.0.0',
     inputSchema: {
       type: 'object',
@@ -132,8 +133,7 @@ const BUILTIN_SKILLS: SkillManifest[] = [
   },
   {
     name: 'git_commit_push',
-    description:
-      'Commit all staged changes, push to remote, and optionally create a GitHub Pull Request.',
+    description: 'Commit all staged changes, push to remote, and optionally create a GitHub Pull Request.',
     version: '1.0.0',
     inputSchema: {
       type: 'object',

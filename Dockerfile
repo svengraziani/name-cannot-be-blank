@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
+    python3 \
+    python3-pip \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI (needed for container isolation mode)
@@ -28,11 +31,14 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
-# Install Playwright Chromium browser + OS dependencies for web_browse tool
-RUN npx playwright install --with-deps chromium \
-    || echo "Playwright browser install skipped (web_browse tool will be unavailable)"
+# Install Scrapling for stealth web browsing (replaces Playwright)
+COPY requirements.txt ./
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt \
+    && scrapling install \
+    || echo "Scrapling browser install skipped (web_browse tool will be unavailable)"
 
 COPY --from=builder /app/dist ./dist
+COPY scripts/ ./scripts/
 COPY ui/ ./ui/
 
 RUN mkdir -p /data

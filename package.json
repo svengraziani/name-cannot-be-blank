@@ -27,7 +27,6 @@
     "node-ical": "^0.25.4",
     "node-telegram-bot-api": "^0.66.0",
     "nodemailer": "^6.9.0",
-    "playwright": "^1.58.2",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
     "uuid": "^10.0.0"
