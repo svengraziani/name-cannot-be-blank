@@ -1,6 +1,15 @@
 import { Router, Request, Response } from 'express';
+import multer from 'multer';
 import { createChannel, updateChannel, removeChannel, getChannelStatuses } from '../channels/manager';
 import { getRecentRuns, getUsageSummary, getUsageDaily, getUsageByModel, getRecentApiCalls } from '../db/sqlite';
+import {
+  storeFile,
+  getFile,
+  readFileBuffer,
+  getRecentFiles,
+  getConversationFiles,
+  deleteFile,
+} from '../files';
 import {
   createAndStartTask,
   startTaskLoop,
@@ -838,6 +847,98 @@ export function createApiRouter(): Router {
       const deleted = deleteApprovalRule(req.params.toolName as string);
       if (!deleted) {
         res.status(404).json({ error: 'Rule not found' });
+        return;
+      }
+      res.json({ status: 'deleted' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== Files ====================
+
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  });
+
+  router.get('/files', (req: Request, res: Response) => {
+    try {
+      const conversationId = req.query.conversation_id as string | undefined;
+      if (conversationId) {
+        res.json(getConversationFiles(conversationId));
+      } else {
+        const limit = parseInt(req.query.limit as string) || 50;
+        res.json(getRecentFiles(limit));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/files', upload.single('file'), (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: 'No file uploaded. Use multipart/form-data with field name "file".' });
+        return;
+      }
+      const conversationId = req.body?.conversation_id as string | undefined;
+      const channelType = req.body?.channel_type as string | undefined;
+      const sender = req.body?.sender as string | undefined;
+
+      const attachment = storeFile(
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype,
+        conversationId,
+        channelType || 'api',
+        sender || 'api',
+      );
+      res.json(attachment);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  });
+
+  router.get('/files/:id', (req: Request, res: Response) => {
+    try {
+      const record = getFile(req.params.id as string);
+      if (!record) {
+        res.status(404).json({ error: 'File not found' });
+        return;
+      }
+      res.json(record);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/files/:id/download', (req: Request, res: Response) => {
+    try {
+      const result = readFileBuffer(req.params.id as string);
+      if (!result) {
+        res.status(404).json({ error: 'File not found' });
+        return;
+      }
+      res.setHeader('Content-Type', result.record.mime_type);
+      res.setHeader('Content-Disposition', `attachment; filename="${result.record.filename}"`);
+      res.setHeader('Content-Length', result.record.size);
+      res.send(result.buffer);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.delete('/files/:id', (req: Request, res: Response) => {
+    try {
+      const deleted = deleteFile(req.params.id as string);
+      if (!deleted) {
+        res.status(404).json({ error: 'File not found' });
         return;
       }
       res.json({ status: 'deleted' });

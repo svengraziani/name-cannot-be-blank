@@ -5,6 +5,7 @@ import { httpRequestTool } from './http-request';
 import { capcutApiTool } from './capcut-api';
 import { delegateTaskTool, broadcastEventTool, queryAgentsTool } from '../a2a/tools';
 import { gitCloneTool, gitReadFileTool, gitWriteFileTool, gitCommitPushTool } from './git-repo';
+import { processFileTool } from './file-process';
 
 /**
  * Register all built-in tools.
@@ -26,6 +27,9 @@ export function registerBuiltinTools(): void {
   toolRegistry.register(gitReadFileTool);
   toolRegistry.register(gitWriteFileTool);
   toolRegistry.register(gitCommitPushTool);
+
+  // File processing tool
+  toolRegistry.register(processFileTool);
 
   console.log(
     `[tools] ${toolRegistry.getAllNames().length} tools registered: ${toolRegistry.getAllNames().join(', ')}`,

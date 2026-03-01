@@ -9,6 +9,7 @@ import { ResolvedAgentConfig } from './groups/resolver';
 import { setA2AContext } from './a2a';
 import { checkApprovalRequired, requestApproval } from './hitl';
 import { setGitContext } from './tools/git-repo';
+import { FileAttachment, isImageMime, readFileBuffer, extractFileContent } from '../files';
 
 export const agentEvents = new EventEmitter();
 
@@ -93,9 +94,17 @@ export async function processMessage(
   sender: string,
   enabledTools?: string[],
   agentConfig?: ResolvedAgentConfig,
+  attachments?: FileAttachment[],
 ): Promise<string> {
+  // Build storage message text (includes file references)
+  let storedText = userMessage;
+  if (attachments && attachments.length > 0) {
+    const fileDescriptions = attachments.map((a) => extractFileContent(a.id));
+    storedText = `${userMessage}\n\n${fileDescriptions.join('\n')}`;
+  }
+
   // Store user message
-  const msgId = addMessage(conversationId, 'user', userMessage, channelType, sender);
+  const msgId = addMessage(conversationId, 'user', storedText, channelType, sender);
   const runId = createAgentRun(conversationId, msgId);
 
   agentEvents.emit('run:start', { runId, conversationId, channelType, groupId: agentConfig?.groupId });
@@ -109,6 +118,39 @@ export async function processMessage(
       role: m.role as 'user' | 'assistant',
       content: m.content,
     }));
+
+    // If the last message has image attachments, replace its content with
+    // multimodal content blocks for Claude vision
+    if (attachments && attachments.length > 0 && messages.length > 0) {
+      const lastMsg = messages[messages.length - 1]!;
+      if (lastMsg.role === 'user') {
+        const contentBlocks: Anthropic.ContentBlockParam[] = [];
+
+        // Add image blocks for image attachments
+        for (const att of attachments) {
+          if (isImageMime(att.mimeType)) {
+            const fileData = readFileBuffer(att.id);
+            if (fileData) {
+              const mediaType = att.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+              contentBlocks.push({
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: mediaType,
+                  data: fileData.buffer.toString('base64'),
+                },
+              });
+            }
+          }
+        }
+
+        // Add the text content
+        const textContent = typeof lastMsg.content === 'string' ? lastMsg.content : storedText;
+        contentBlocks.push({ type: 'text', text: textContent });
+
+        lastMsg.content = contentBlocks;
+      }
+    }
 
     // Determine effective settings (group config or global defaults)
     const effectiveModel = agentConfig?.model || config.agentModel;

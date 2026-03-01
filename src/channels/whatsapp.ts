@@ -1,6 +1,7 @@
 import { ChannelAdapter, IncomingMessage } from './base';
 import * as fs from 'fs';
 import * as path from 'path';
+import { storeFile, FileAttachment, validateMimeType } from '../files';
 
 // Baileys types - dynamic import to handle optional dependency
 type WASocket = any;
@@ -68,6 +69,7 @@ export class WhatsAppAdapter extends ChannelAdapter {
         DisconnectReason,
         Browsers,
         fetchLatestBaileysVersion,
+        downloadMediaMessage,
       } = await import('baileys');
 
       const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
@@ -190,20 +192,74 @@ export class WhatsAppAdapter extends ChannelAdapter {
         for (const msg of upsert.messages) {
           if (!msg.message || msg.key.fromMe) continue;
 
-          const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+          const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.documentMessage?.caption || '';
 
-          if (!text) continue;
+          // Check for media messages
+          const hasImage = !!msg.message.imageMessage;
+          const hasDocument = !!msg.message.documentMessage;
 
-          const incoming: IncomingMessage = {
-            channelId: this.channelId,
-            channelType: 'whatsapp',
-            externalChatId: msg.key.remoteJid || '',
-            sender: msg.pushName || msg.key.participant || msg.key.remoteJid || 'unknown',
-            text,
-            chatTitle: msg.key.remoteJid || undefined,
-          };
+          // Skip messages with no text and no media
+          if (!text && !hasImage && !hasDocument) continue;
 
-          this.emit('message', incoming);
+          const sender = msg.pushName || msg.key.participant || msg.key.remoteJid || 'unknown';
+
+          // Handle media downloads asynchronously
+          void (async () => {
+            const attachments: FileAttachment[] = [];
+
+            if (hasImage) {
+              try {
+                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                const mimeType = msg.message.imageMessage.mimetype || 'image/jpeg';
+                if (validateMimeType(mimeType)) {
+                  const attachment = storeFile(
+                    buffer as Buffer,
+                    `whatsapp_image_${Date.now()}.${mimeType.split('/')[1] || 'jpg'}`,
+                    mimeType,
+                    undefined,
+                    'whatsapp',
+                    sender,
+                  );
+                  attachments.push(attachment);
+                }
+              } catch (err) {
+                console.error(`[whatsapp:${this.channelId}] Failed to download image:`, err);
+              }
+            }
+
+            if (hasDocument) {
+              try {
+                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                const mimeType = msg.message.documentMessage.mimetype || 'application/octet-stream';
+                const filename = msg.message.documentMessage.fileName || `document_${Date.now()}`;
+                if (validateMimeType(mimeType)) {
+                  const attachment = storeFile(
+                    buffer as Buffer,
+                    filename,
+                    mimeType,
+                    undefined,
+                    'whatsapp',
+                    sender,
+                  );
+                  attachments.push(attachment);
+                }
+              } catch (err) {
+                console.error(`[whatsapp:${this.channelId}] Failed to download document:`, err);
+              }
+            }
+
+            const incoming: IncomingMessage = {
+              channelId: this.channelId,
+              channelType: 'whatsapp',
+              externalChatId: msg.key.remoteJid || '',
+              sender,
+              text: text || '(file attached)',
+              chatTitle: msg.key.remoteJid || undefined,
+              attachments: attachments.length > 0 ? attachments : undefined,
+            };
+
+            this.emit('message', incoming);
+          })();
         }
       });
     } catch (err) {
@@ -247,6 +303,26 @@ export class WhatsAppAdapter extends ChannelAdapter {
   async sendMessage(externalChatId: string, text: string): Promise<void> {
     if (!this.sock) throw new Error('WhatsApp not connected');
     await this.sock.sendMessage(externalChatId, { text });
+  }
+
+  override async sendFile(externalChatId: string, filePath: string, filename: string, mimeType: string): Promise<void> {
+    if (!this.sock) throw new Error('WhatsApp not connected');
+
+    const buffer = fs.readFileSync(filePath);
+
+    if (mimeType.startsWith('image/')) {
+      await this.sock.sendMessage(externalChatId, {
+        image: buffer,
+        caption: filename,
+        mimetype: mimeType,
+      });
+    } else {
+      await this.sock.sendMessage(externalChatId, {
+        document: buffer,
+        fileName: filename,
+        mimetype: mimeType,
+      });
+    }
   }
 
   /** Store the data URL after conversion by the manager */
