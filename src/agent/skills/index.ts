@@ -20,3 +20,14 @@ export {
 } from './loader';
 export { exportBuiltinSkills } from './builtin-exporter';
 export { startSkillWatcher, stopSkillWatcher, skillWatcherEvents } from './watcher';
+export type { CatalogEntry } from './catalog';
+export { getCatalog, getCatalogEntry, getAvailableCatalogEntries, searchCatalog } from './catalog';
+export {
+  discoveryEvents,
+  requestSkillActivation,
+  respondToDiscovery,
+  getPendingDiscoveries,
+  getPendingDiscoveryCount,
+  buildCatalogPromptSection,
+} from './discovery';
+export type { DiscoveryRequest, DiscoveryResult } from './discovery';

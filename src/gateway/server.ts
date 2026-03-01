@@ -10,7 +10,7 @@ import { loopEvents } from '../agent/loop-mode';
 import { authMiddleware, rateLimitMiddleware } from '../auth/middleware';
 import { a2aEvents } from '../agent/a2a';
 import { schedulerEvents, calendarEvents } from '../scheduler';
-import { skillWatcherEvents } from '../agent/skills';
+import { skillWatcherEvents, discoveryEvents } from '../agent/skills';
 import { approvalEvents, notifyApprovalRequired, notifyApprovalResolved } from '../agent/hitl';
 
 export function createServer() {
@@ -122,6 +122,12 @@ export function createServer() {
     void notifyApprovalResolved(data);
   });
   approvalEvents.on('approval:timeout', (data) => broadcast('approval:timeout', data));
+
+  // Forward Auto-Skill-Discovery events
+  discoveryEvents.on('discovery:requested', (data) => broadcast('discovery:requested', data));
+  discoveryEvents.on('discovery:approved', (data) => broadcast('discovery:approved', data));
+  discoveryEvents.on('discovery:rejected', (data) => broadcast('discovery:rejected', data));
+  discoveryEvents.on('discovery:timeout', (data) => broadcast('discovery:timeout', data));
 
   // Fallback: serve UI for any non-API route
   app.get('*', (_req, res) => {
