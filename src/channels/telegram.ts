@@ -199,6 +199,15 @@ export class TelegramAdapter extends ChannelAdapter {
     });
   }
 
+  override async sendTypingIndicator(externalChatId: string): Promise<void> {
+    if (!this.bot) return;
+    try {
+      await this.bot.sendChatAction(externalChatId, 'typing');
+    } catch {
+      // Ignore errors – typing indicator is best-effort
+    }
+  }
+
   async sendMessage(externalChatId: string, text: string): Promise<void> {
     if (!this.bot) throw new Error('Telegram bot not connected');
 

@@ -244,6 +244,15 @@ export class WhatsAppAdapter extends ChannelAdapter {
     this.setStatus('disconnected');
   }
 
+  override async sendTypingIndicator(externalChatId: string): Promise<void> {
+    if (!this.sock) return;
+    try {
+      await this.sock.sendPresenceUpdate('composing', externalChatId);
+    } catch {
+      // Ignore errors – typing indicator is best-effort
+    }
+  }
+
   async sendMessage(externalChatId: string, text: string): Promise<void> {
     if (!this.sock) throw new Error('WhatsApp not connected');
     await this.sock.sendMessage(externalChatId, { text });
