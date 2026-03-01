@@ -31,10 +31,23 @@ export abstract class ChannelAdapter extends EventEmitter {
   abstract sendMessage(externalChatId: string, text: string): Promise<void>;
 
   /**
+   * Send a voice/audio message (if supported by channel).
+   * Default: not implemented. Override in adapters that support voice (e.g. Telegram).
+   */
+  async sendVoice(_externalChatId: string, _audio: Buffer): Promise<void> {
+    // Voice messages not supported by default
+  }
+
+  /**
    * Send an approval prompt with interactive buttons (if supported by channel).
    * Default implementation sends a plain text message with /approve and /reject commands.
    */
-  async sendApprovalPrompt(externalChatId: string, approvalId: string, toolName: string, riskLevel: string): Promise<void> {
+  async sendApprovalPrompt(
+    externalChatId: string,
+    approvalId: string,
+    toolName: string,
+    riskLevel: string,
+  ): Promise<void> {
     await this.sendMessage(
       externalChatId,
       `**Approval required** (${riskLevel}): \`${toolName}\`\n\n` +
