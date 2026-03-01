@@ -203,7 +203,7 @@ export async function executeJob(jobId: string): Promise<void> {
     }
 
     // Run the agent
-    const result = await processMessage(
+    const agentResult = await processMessage(
       conversationId,
       prompt,
       'scheduler',
@@ -212,12 +212,12 @@ export async function executeJob(jobId: string): Promise<void> {
       agentConfig,
     );
 
-    // Route output
-    await routeOutput(job.output, result, job.name);
+    // Route output (text content only; files are not routed through scheduler)
+    await routeOutput(job.output, agentResult.content, job.name);
 
     // Update status
-    completeJobRun(runId, { status: 'success', output: result });
-    updateJobRunStatus(jobId, 'success', result);
+    completeJobRun(runId, { status: 'success', output: agentResult.content });
+    updateJobRunStatus(jobId, 'success', agentResult.content);
 
     // Calculate next run
     const nextRun = calculateNextRunTime(job.trigger);
@@ -225,8 +225,8 @@ export async function executeJob(jobId: string): Promise<void> {
       updateJob(jobId, { nextRunAt: nextRun.toISOString() });
     }
 
-    schedulerEvents.emit('job:complete', { jobId, name: job.name, resultLength: result.length });
-    console.log(`[scheduler] Job "${job.name}" completed (${result.length} chars)`);
+    schedulerEvents.emit('job:complete', { jobId, name: job.name, resultLength: agentResult.content.length });
+    console.log(`[scheduler] Job "${job.name}" completed (${agentResult.content.length} chars)`);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     completeJobRun(runId, { status: 'error', error: errorMsg });

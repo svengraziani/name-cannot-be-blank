@@ -1,4 +1,4 @@
-import { ChannelAdapter, IncomingMessage } from './base';
+import { ChannelAdapter, IncomingMessage, OutgoingFile } from './base';
 import Imap from 'imap';
 import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
@@ -101,6 +101,24 @@ export class EmailAdapter extends ChannelAdapter {
       to: externalChatId,
       subject: 'Re: Agent Response',
       text,
+    });
+  }
+
+  override async sendFile(externalChatId: string, file: OutgoingFile): Promise<void> {
+    if (!this.transporter) throw new Error('SMTP not configured');
+
+    await this.transporter.sendMail({
+      from: this.conf.smtpUser,
+      to: externalChatId,
+      subject: `Re: ${file.caption || file.filename}`,
+      text: file.caption || `Please find the attached file: ${file.filename}`,
+      attachments: [
+        {
+          filename: file.filename,
+          content: file.data,
+          contentType: file.mimeType,
+        },
+      ],
     });
   }
 
