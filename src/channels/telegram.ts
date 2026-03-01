@@ -1,6 +1,10 @@
 import TelegramBot from 'node-telegram-bot-api';
+import * as fs from 'fs';
+import * as https from 'https';
+import * as http from 'http';
 import { ChannelAdapter, IncomingMessage } from './base';
 import { respondToApproval } from '../agent/hitl';
+import { storeFile, FileAttachment, validateMimeType } from '../files';
 
 export interface TelegramConfig {
   botToken: string;
@@ -70,6 +74,25 @@ function markdownToTelegramHtml(text: string): string {
   return result;
 }
 
+/**
+ * Download a file from a URL into a buffer.
+ */
+function downloadBuffer(url: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const get = url.startsWith('https') ? https.get : http.get;
+    get(url, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        downloadBuffer(res.headers.location).then(resolve, reject);
+        return;
+      }
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
 export class TelegramAdapter extends ChannelAdapter {
   private bot?: TelegramBot;
   private readonly conf: TelegramConfig;
@@ -90,21 +113,50 @@ export class TelegramAdapter extends ChannelAdapter {
     try {
       this.bot = new TelegramBot(this.conf.botToken, { polling: true });
 
-      this.bot.on('message', (msg) => {
-        if (!msg.text) return;
-
+      this.bot.on('message', async (msg) => {
         const userId = String(msg.from?.id || '');
         if (this.conf.allowedUsers.length > 0 && !this.conf.allowedUsers.includes(userId)) {
           return; // Ignore unauthorized users
         }
+
+        const text = msg.text || msg.caption || '';
+        const attachments: FileAttachment[] = [];
+
+        // Handle photo attachments
+        if (msg.photo && msg.photo.length > 0) {
+          try {
+            // Get highest resolution photo
+            const photo = msg.photo[msg.photo.length - 1]!;
+            const attachment = await this.downloadTelegramFile(photo.file_id, `photo_${photo.file_id}.jpg`, 'image/jpeg');
+            if (attachment) attachments.push(attachment);
+          } catch (err) {
+            console.error(`[telegram:${this.channelId}] Failed to download photo:`, err);
+          }
+        }
+
+        // Handle document attachments
+        if (msg.document) {
+          try {
+            const mimeType = msg.document.mime_type || 'application/octet-stream';
+            const filename = msg.document.file_name || `document_${msg.document.file_id}`;
+            const attachment = await this.downloadTelegramFile(msg.document.file_id, filename, mimeType);
+            if (attachment) attachments.push(attachment);
+          } catch (err) {
+            console.error(`[telegram:${this.channelId}] Failed to download document:`, err);
+          }
+        }
+
+        // Skip messages with no text and no attachments
+        if (!text && attachments.length === 0) return;
 
         const incoming: IncomingMessage = {
           channelId: this.channelId,
           channelType: 'telegram',
           externalChatId: String(msg.chat.id),
           sender: msg.from?.username || msg.from?.first_name || userId,
-          text: msg.text,
+          text: text || '(file attached)',
           chatTitle: msg.chat.title || msg.chat.first_name || undefined,
+          attachments: attachments.length > 0 ? attachments : undefined,
         };
 
         this.emit('message', incoming);
@@ -240,5 +292,38 @@ export class TelegramAdapter extends ChannelAdapter {
         }
       }
     }
+  }
+
+  override async sendFile(externalChatId: string, filePath: string, filename: string, mimeType: string): Promise<void> {
+    if (!this.bot) throw new Error('Telegram bot not connected');
+
+    const stream = fs.createReadStream(filePath);
+
+    if (mimeType.startsWith('image/')) {
+      await this.bot.sendPhoto(externalChatId, stream as any, {}, { filename, contentType: mimeType });
+    } else {
+      await this.bot.sendDocument(externalChatId, stream as any, {}, { filename, contentType: mimeType });
+    }
+  }
+
+  /**
+   * Download a file from Telegram and store it.
+   */
+  private async downloadTelegramFile(
+    fileId: string,
+    filename: string,
+    mimeType: string,
+  ): Promise<FileAttachment | null> {
+    if (!this.bot) return null;
+
+    if (!validateMimeType(mimeType)) {
+      console.log(`[telegram:${this.channelId}] Skipping unsupported file type: ${mimeType}`);
+      return null;
+    }
+
+    const fileUrl = await this.bot.getFileLink(fileId);
+    const buffer = await downloadBuffer(fileUrl);
+
+    return storeFile(buffer, filename, mimeType, undefined, 'telegram');
   }
 }

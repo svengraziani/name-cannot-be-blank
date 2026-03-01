@@ -21,6 +21,7 @@ import { resolveAgentConfig, checkGroupBudget } from '../agent/groups/resolver';
 import { getSystemPrompt } from '../agent/loop';
 import { respondToApproval, approvalEvents } from '../agent/hitl';
 import { EventEmitter } from 'events';
+import { FileAttachment } from '../files';
 
 export const channelManagerEvents = new EventEmitter();
 
@@ -341,6 +342,11 @@ async function handleConversationMessage(
       }
     }
 
+    // Update file attachments with conversation ID for tracking
+    if (msg.attachments && msg.attachments.length > 0) {
+      console.log(`[manager] Message has ${msg.attachments.length} file attachment(s)`);
+    }
+
     const reply = await processMessage(
       conversationId,
       msg.text,
@@ -348,6 +354,7 @@ async function handleConversationMessage(
       msg.sender,
       enabledTools,
       agentConfig,
+      msg.attachments,
     );
     await adapter.sendMessage(msg.externalChatId, reply);
 
@@ -394,9 +401,16 @@ async function drainMessageQueue(conversationId: string): Promise<void> {
     ? pending[0]!.msg.text
     : pending.map((q, i) => `[Message ${i + 1}]: ${q.msg.text}`).join('\n\n');
 
+  // Merge all attachments from queued messages
+  const allAttachments: FileAttachment[] = [];
+  for (const q of pending) {
+    if (q.msg.attachments) allAttachments.push(...q.msg.attachments);
+  }
+
   const mergedMsg: IncomingMessage = {
     ...last.msg,
     text: combinedText,
+    attachments: allAttachments.length > 0 ? allAttachments : undefined,
   };
 
   console.log(`[manager] Draining ${pending.length} queued message(s) for conversation ${conversationId}`);

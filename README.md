@@ -11,18 +11,19 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 ## Features
 
 - **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), and Email (IMAP/SMTP) adapters
+- **File/Document Handling** -- Receive, process, and send files (PDFs, images, CSVs) across all channels. Claude Vision for image analysis, built-in PDF text extraction, and structured data processing
 - **Container Isolation** -- Run each agent call in an isolated Docker container (nanoclaw pattern: secrets via stdin, no network leaks)
 - **Loop Mode** -- Autonomous task execution with prompt files (ralph-wiggum pattern: plan/build loops)
 - **Agent Groups** -- Group agents with per-group system prompts, model selection, skills, budgets (daily/monthly token caps), and channel binding
 - **Agent-to-Agent (A2A) Protocol** -- Multi-agent coordination with message bus, sub-agent spawning, predefined roles, task delegation, and broadcasting
 - **Human-in-the-Loop (HITL)** -- Approval workflows with configurable risk levels per tool, auto-approve rules, timeouts, and real-time WebSocket notifications
 - **Skills System** -- Dynamic, file-based tool extensions. Built-in tools are exported as skills; custom skills can be uploaded, toggled, and hot-reloaded
-- **Built-in Agent Tools** -- Web browsing (Playwright), HTTP requests, script execution, and A2A tools (delegate, broadcast, query)
+- **Built-in Agent Tools** -- Web browsing (Playwright), HTTP requests, script execution, file processing, and A2A tools (delegate, broadcast, query)
 - **Scheduler** -- Cron-based job scheduling with iCal calendar integration and output routing to channels or webhooks
 - **Usage Analytics** -- Per-call token tracking, cost estimation, daily/model breakdowns
 - **Auth & Rate Limiting** -- Session-based login, admin setup flow, IP-based rate limiting
 - **Real-time Dashboard** -- WebSocket-powered live activity feed, channel management, task monitoring
-- **SQLite Persistence** -- All data (messages, runs, usage, sessions, approvals, schedules) in a single portable database
+- **SQLite Persistence** -- All data (messages, runs, usage, sessions, approvals, schedules, files) in a single portable database
 
 ## Quick Start
 
@@ -97,8 +98,18 @@ npm run dev
 │  - web-browse      │ │  - Sub-agent spawning   │
 │  - http-request    │ │  - Task delegation      │
 │  - run-script      │ │  - Event broadcasting   │
-│  - Custom skills   │ │  - Agent querying       │
-└────────────────────┘ └─────────────────────────┘
+│  - process-file    │ │  - Agent querying       │
+│  - Custom skills   │ │                         │
+└────────┬───────────┘ └─────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────┐
+│  File Storage (/data/files/)                     │
+│  - Channel file receiving (photos, docs, PDFs)   │
+│  - Claude Vision for image analysis              │
+│  - PDF text extraction, CSV/JSON parsing         │
+│  - File send-back via channels                   │
+└──────────────────────────────────────────────────┘
                │
                ▼
 ┌──────────────────────────────────────────────────┐
@@ -221,6 +232,65 @@ curl -X POST http://localhost:3000/api/skills \
     "handler": "module.exports = async ({ query }) => ({ result: query.toUpperCase() });"
   }'
 ```
+
+## File/Document Handling
+
+Agents can receive, process, and send back files across all channels. Files sent via Telegram, WhatsApp, or Email are automatically downloaded, stored, and made available to the agent for processing.
+
+### Supported file types
+
+| Category | Types |
+|----------|-------|
+| Images | JPEG, PNG, GIF, WebP (analyzed via Claude Vision) |
+| Documents | PDF (text extraction), CSV, JSON, XML, plain text |
+| Office | Excel (.xlsx, .xls), Word (.docx, .doc) |
+
+### How it works
+
+1. **User sends a file** via Telegram, WhatsApp, or Email
+2. **Channel adapter downloads** the file and stores it in `/data/files/`
+3. **Agent receives the message** with file context -- images are sent as vision content blocks, text files are inlined
+4. **Agent processes the file** using the `process_file` tool for on-demand operations (list, read, extract text, get info)
+5. **Agent can send files back** to the user via the channel's native file sending
+
+### Upload via API
+
+```bash
+# Upload a file
+curl -X POST http://localhost:3000/api/files \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "file=@/path/to/document.pdf" \
+  -F "sender=api-user"
+
+# List recent files
+curl http://localhost:3000/api/files \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Download a file
+curl http://localhost:3000/api/files/FILE_ID/download \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -o output.pdf
+
+# Delete a file
+curl -X DELETE http://localhost:3000/api/files/FILE_ID \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Use case: Supplier catalog processing (SHARC)
+
+Send a supplier catalog PDF via Telegram or Email. The agent will:
+1. Receive the PDF and store it
+2. Extract text content from the PDF
+3. Parse and structure the data (products, prices, specifications)
+4. Return structured data or save it to a file
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATA_DIR` | `/data` | Base directory for file storage (`/data/files/`) |
+
+Files are limited to 20MB per upload. Storage is managed automatically with per-file UUID directories.
 
 ## Scheduler
 
@@ -378,6 +448,16 @@ All endpoints require authentication (session token) unless the system is in set
 | GET | `/api/scheduler/calendars/:id/events` | Get calendar events |
 | DELETE | `/api/scheduler/calendars/:id` | Delete a calendar source |
 
+### Files
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/files` | List recent files (or filter by `?conversation_id=`) |
+| POST | `/api/files` | Upload a file (multipart/form-data) |
+| GET | `/api/files/:id` | Get file metadata |
+| GET | `/api/files/:id/download` | Download file contents |
+| DELETE | `/api/files/:id` | Delete a file |
+
 ### Usage Analytics
 
 | Method | Endpoint | Description |
@@ -462,17 +542,21 @@ All endpoints require authentication (session token) unless the system is in set
 │   │       ├── web-browse.ts       # Playwright web browsing
 │   │       ├── http-request.ts     # HTTP request tool
 │   │       ├── run-script.ts       # Script execution tool
+│   │       ├── file-process.ts     # File processing tool
 │   │       └── types.ts            # Tool type definitions
 │   ├── auth/
 │   │   └── middleware.ts            # Session auth, rate limiting
 │   ├── channels/
-│   │   ├── base.ts                 # Abstract channel adapter
-│   │   ├── manager.ts              # Channel lifecycle + routing
-│   │   ├── telegram.ts             # Telegram adapter
-│   │   ├── whatsapp.ts             # WhatsApp adapter (Baileys)
-│   │   └── email.ts                # Email adapter (IMAP/SMTP)
+│   │   ├── base.ts                 # Abstract channel adapter + file support
+│   │   ├── manager.ts              # Channel lifecycle + routing + file forwarding
+│   │   ├── telegram.ts             # Telegram adapter (text + photo/document)
+│   │   ├── whatsapp.ts             # WhatsApp adapter (text + media messages)
+│   │   └── email.ts                # Email adapter (text + MIME attachments)
 │   ├── db/
 │   │   └── sqlite.ts               # Database schema + queries
+│   ├── files/
+│   │   ├── storage.ts              # File storage, DB schema, CRUD
+│   │   └── index.ts                # Public API exports
 │   ├── gateway/
 │   │   ├── server.ts               # Express + WebSocket server
 │   │   └── api.ts                  # REST API routes
