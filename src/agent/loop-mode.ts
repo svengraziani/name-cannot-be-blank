@@ -23,6 +23,7 @@ import {
 } from '../db/sqlite';
 import { EventEmitter } from 'events';
 import Anthropic from '@anthropic-ai/sdk';
+import { getDefaultCircuitBreaker } from './resilience';
 
 export const loopEvents = new EventEmitter();
 
@@ -122,14 +123,19 @@ export function startTaskLoop(taskId: number): void {
           }
         }
 
-        // Call the agent
+        // Call the agent (with retry + circuit breaker)
         const startTime = Date.now();
-        const response = await getClient().messages.create({
-          model: config.agentModel,
-          max_tokens: config.agentMaxTokens,
-          system: `You are an autonomous agent executing a loop task. Each iteration builds on the previous output. Be thorough and indicate when the task is COMPLETE by including the word "TASK_COMPLETE" in your response.`,
-          messages: [{ role: 'user', content: contextMessage }],
-        });
+        const breaker = getDefaultCircuitBreaker();
+        const response = await breaker.execute(
+          () =>
+            getClient().messages.create({
+              model: config.agentModel,
+              max_tokens: config.agentMaxTokens,
+              system: `You are an autonomous agent executing a loop task. Each iteration builds on the previous output. Be thorough and indicate when the task is COMPLETE by including the word "TASK_COMPLETE" in your response.`,
+              messages: [{ role: 'user', content: contextMessage }],
+            }),
+          `loop-mode[${config.agentModel}]`,
+        );
 
         const durationMs = Date.now() - startTime;
         const textBlocks = response.content.filter((b) => b.type === 'text');
