@@ -6,11 +6,11 @@
 
 <p align="center">An agentic AI loop gateway with multi-channel messaging support, container isolation, autonomous task execution, and a real-time web dashboard.</p>
 
-Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude AI and runs agent interactions through a managed pipeline with conversation tracking, token usage analytics, and optional OS-level container isolation.
+Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email, Discord, Slack, Mattermost) to Claude AI and runs agent interactions through a managed pipeline with conversation tracking, token usage analytics, and optional OS-level container isolation.
 
 ## Features
 
-- **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), and Email (IMAP/SMTP) adapters
+- **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), Email (IMAP/SMTP), Discord, Slack (Socket Mode), and Mattermost adapters
 - **Container Isolation** -- Run each agent call in an isolated Docker container (nanoclaw pattern: secrets via stdin, no network leaks)
 - **Loop Mode** -- Autonomous task execution with prompt files (ralph-wiggum pattern: plan/build loops)
 - **Agent Groups** -- Group agents with per-group system prompts, model selection, skills, budgets (daily/monthly token caps), and channel binding
@@ -71,7 +71,7 @@ npm run dev
 ```
 ┌──────────────────────────────────────────────────┐
 │  Messaging Channels                              │
-│  (Telegram, WhatsApp, Email)                     │
+│  (Telegram, WhatsApp, Email, Discord, Slack)     │
 └──────────────┬───────────────────────────────────┘
                │
                ▼
@@ -427,6 +427,25 @@ All endpoints require authentication (session token) unless the system is in set
 2. Enter IMAP and SMTP credentials
 3. The gateway polls for new emails and replies via SMTP
 
+### Discord
+
+1. Create a bot at [Discord Developer Portal](https://discord.com/developers/applications)
+2. Enable the **MESSAGE CONTENT** intent under Bot settings
+3. Invite the bot to your server with `bot` and `applications.commands` scopes
+4. In the Web UI, click **+ Add Channel** > Discord
+5. Paste the bot token
+6. Optionally restrict to specific channel IDs or user IDs
+
+### Slack
+
+1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps)
+2. Enable **Socket Mode** and generate an App-Level Token (`xapp-...`)
+3. Add Bot Token Scopes: `chat:write`, `channels:read`, `users:read`, `app_mentions:read`
+4. Install the app to your workspace and copy the Bot Token (`xoxb-...`)
+5. In the Web UI, click **+ Add Channel** > Slack
+6. Enter the Bot Token, App Token, and Signing Secret
+7. Optionally restrict to specific channel IDs
+
 ## Project Structure
 
 ```
@@ -470,7 +489,9 @@ All endpoints require authentication (session token) unless the system is in set
 │   │   ├── manager.ts              # Channel lifecycle + routing
 │   │   ├── telegram.ts             # Telegram adapter
 │   │   ├── whatsapp.ts             # WhatsApp adapter (Baileys)
-│   │   └── email.ts                # Email adapter (IMAP/SMTP)
+│   │   ├── email.ts                # Email adapter (IMAP/SMTP)
+│   │   ├── discord.ts              # Discord adapter (discord.js)
+│   │   └── slack.ts                # Slack adapter (Socket Mode)
 │   ├── db/
 │   │   └── sqlite.ts               # Database schema + queries
 │   ├── gateway/
