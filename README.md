@@ -6,11 +6,11 @@
 
 <p align="center">An agentic AI loop gateway with multi-channel messaging support, container isolation, autonomous task execution, and a real-time web dashboard.</p>
 
-Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude AI and runs agent interactions through a managed pipeline with conversation tracking, token usage analytics, and optional OS-level container isolation.
+Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) and generic Webhooks to Claude AI and runs agent interactions through a managed pipeline with conversation tracking, token usage analytics, and optional OS-level container isolation.
 
 ## Features
 
-- **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), and Email (IMAP/SMTP) adapters
+- **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), Email (IMAP/SMTP), and generic Webhook adapters
 - **Container Isolation** -- Run each agent call in an isolated Docker container (nanoclaw pattern: secrets via stdin, no network leaks)
 - **Loop Mode** -- Autonomous task execution with prompt files (ralph-wiggum pattern: plan/build loops)
 - **Agent Groups** -- Group agents with per-group system prompts, model selection, skills, budgets (daily/monthly token caps), and channel binding
@@ -71,7 +71,7 @@ npm run dev
 ```
 ┌──────────────────────────────────────────────────┐
 │  Messaging Channels                              │
-│  (Telegram, WhatsApp, Email)                     │
+│  (Telegram, WhatsApp, Email, Webhook)            │
 └──────────────┬───────────────────────────────────┘
                │
                ▼
@@ -399,6 +399,12 @@ All endpoints require authentication (session token) unless the system is in set
 | GET | `/api/tasks/:id/output` | Get task output |
 | DELETE | `/api/tasks/:id` | Delete a task |
 
+### Webhooks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/webhook/incoming/:channelId` | Send a message to a webhook channel (no auth middleware -- uses channel secret) |
+
 ### Other
 
 | Method | Endpoint | Description |
@@ -426,6 +432,76 @@ All endpoints require authentication (session token) unless the system is in set
 1. In the Web UI, click **+ Add Channel** > Email
 2. Enter IMAP and SMTP credentials
 3. The gateway polls for new emails and replies via SMTP
+
+### Webhook (Generic)
+
+The Webhook channel lets you integrate Loop Gateway into any existing application via HTTP. It supports two modes:
+
+- **Async mode** (with `callbackUrl`): Inbound request is acknowledged immediately, agent response is POSTed to your callback URL
+- **Sync mode** (without `callbackUrl`): Inbound request blocks until the agent responds (up to 2 min timeout)
+
+#### Create a webhook channel
+
+```bash
+curl -X POST http://localhost:3000/api/channels \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "type": "webhook",
+    "name": "my-app-webhook",
+    "config": {
+      "secret": "my-secret-token",
+      "callbackUrl": "https://my-app.example.com/agent-callback"
+    }
+  }'
+```
+
+The response contains the channel `id`. Use it to send messages:
+
+#### Send a message (inbound)
+
+```bash
+curl -X POST http://localhost:3000/webhook/incoming/CHANNEL_ID \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my-secret-token" \
+  -d '{
+    "sender": "user-123",
+    "text": "What is the status of order #456?",
+    "chatId": "conversation-1"
+  }'
+```
+
+**Async mode response** (immediate):
+```json
+{ "status": "accepted", "channelId": "...", "chatId": "conversation-1" }
+```
+
+The agent response is then POSTed to your `callbackUrl`:
+```json
+{
+  "channelId": "...",
+  "chatId": "conversation-1",
+  "text": "Order #456 is currently being processed...",
+  "timestamp": "2025-01-15T10:30:00.000Z"
+}
+```
+
+**Sync mode response** (blocks until agent responds):
+```json
+{
+  "status": "ok",
+  "channelId": "...",
+  "chatId": "conversation-1",
+  "response": "Order #456 is currently being processed..."
+}
+```
+
+#### Configuration options
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `secret` | No | Bearer token for authenticating inbound requests and outbound callbacks |
+| `callbackUrl` | No | URL to POST agent responses to. If omitted, responses are returned synchronously |
 
 ## Project Structure
 
@@ -470,7 +546,8 @@ All endpoints require authentication (session token) unless the system is in set
 │   │   ├── manager.ts              # Channel lifecycle + routing
 │   │   ├── telegram.ts             # Telegram adapter
 │   │   ├── whatsapp.ts             # WhatsApp adapter (Baileys)
-│   │   └── email.ts                # Email adapter (IMAP/SMTP)
+│   │   ├── email.ts                # Email adapter (IMAP/SMTP)
+│   │   └── webhook.ts              # Generic webhook adapter
 │   ├── db/
 │   │   └── sqlite.ts               # Database schema + queries
 │   ├── gateway/
@@ -509,6 +586,7 @@ All endpoints require authentication (session token) unless the system is in set
 - **Agent Group API Keys**: Per-group API keys are stored with AES-256 encryption, never returned in API responses.
 - **Skills Sandboxing**: Custom skills are always sandboxed.
 - **Channel Whitelists**: Telegram and Email adapters support sender whitelists for access control.
+- **Webhook Secrets**: Webhook channels support Bearer token authentication for both inbound and outbound requests.
 - **Credentials**: All secrets stay in `.env` (never committed). The `.gitignore` excludes `.env` and `/data/`.
 
 ## License
