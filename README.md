@@ -23,6 +23,7 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 - **Auth & Rate Limiting** -- Session-based login, admin setup flow, IP-based rate limiting
 - **Real-time Dashboard** -- WebSocket-powered live activity feed, channel management, task monitoring
 - **SQLite Persistence** -- All data (messages, runs, usage, sessions, approvals, schedules) in a single portable database
+- **CLI Tool (`loop-gw`)** -- Direct terminal access to chat, task management, usage stats, and configuration without leaving the command line
 
 ## Quick Start
 
@@ -65,6 +66,102 @@ npm run dev
 | `npm run lint` | Run ESLint |
 | `npm run validate` | Run typecheck + lint + format check |
 | `npm test` | Run tests |
+
+## CLI Tool
+
+The `loop-gw` CLI provides direct terminal access to the gateway API -- chat with the agent, manage tasks, and check usage without leaving the command line.
+
+### Install
+
+```bash
+npm install
+npm run build
+npm link        # makes "loop-gw" available globally
+```
+
+### Setup
+
+```bash
+# Point the CLI to your gateway (default: http://localhost:3000)
+loop-gw config set server http://localhost:3000
+
+# Authenticate
+loop-gw login
+```
+
+### Chat
+
+Send messages directly to the agent from the terminal:
+
+```bash
+# Single message
+loop-gw chat "What is the status of Order 4523?"
+
+# Continue a conversation
+loop-gw chat "Tell me more" --conversation <conversation-id>
+```
+
+### Task Management
+
+Create and manage autonomous loop tasks:
+
+```bash
+# Create a task with custom iterations
+loop-gw task create --prompt "Analyze the sales report and generate insights" --iterations 5 --name sales-analysis
+
+# List all tasks
+loop-gw task list
+
+# Get task output
+loop-gw task output 1
+
+# Stop a running task
+loop-gw task stop 1
+
+# Delete a task
+loop-gw task delete 1
+```
+
+### Status & Usage
+
+```bash
+# Gateway health check
+loop-gw status
+
+# Token usage and cost summary
+loop-gw usage
+```
+
+### Configuration
+
+```bash
+# Show current config
+loop-gw config show
+
+# Set gateway URL
+loop-gw config set server http://my-gateway:3000
+
+# Set auth token directly
+loop-gw config set token <your-session-token>
+```
+
+Configuration is stored in `~/.loop-gw.json`.
+
+### CLI Reference
+
+| Command | Description |
+|---------|-------------|
+| `loop-gw chat <message>` | Send a message to the agent |
+| `loop-gw task list` | List all loop tasks |
+| `loop-gw task create --prompt "..."` | Create and start a loop task |
+| `loop-gw task stop <id>` | Stop a running task |
+| `loop-gw task output <id>` | Get task output |
+| `loop-gw task delete <id>` | Delete a task |
+| `loop-gw status` | Show gateway status |
+| `loop-gw usage` | Show token usage & costs |
+| `loop-gw login` | Authenticate interactively |
+| `loop-gw config show` | Show CLI configuration |
+| `loop-gw config set <key> <value>` | Set a config value |
 
 ## Architecture
 
@@ -399,6 +496,12 @@ All endpoints require authentication (session token) unless the system is in set
 | GET | `/api/tasks/:id/output` | Get task output |
 | DELETE | `/api/tasks/:id` | Delete a task |
 
+### Chat (CLI / Direct)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/chat` | Send a message and get a reply |
+
 ### Other
 
 | Method | Endpoint | Description |
@@ -431,8 +534,11 @@ All endpoints require authentication (session token) unless the system is in set
 
 ```
 ├── src/
-│   ├── index.ts                    # Entry point
+│   ├── index.ts                    # Server entry point
 │   ├── config.ts                   # Environment configuration
+│   ├── cli/
+│   │   ├── index.ts                # CLI entry point (loop-gw)
+│   │   └── client.ts               # HTTP client & config management
 │   ├── agent/
 │   │   ├── loop.ts                 # Agent loop (direct + container modes)
 │   │   ├── container-runner.ts     # Docker container spawning

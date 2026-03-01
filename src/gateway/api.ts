@@ -1,6 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { createChannel, updateChannel, removeChannel, getChannelStatuses } from '../channels/manager';
-import { getRecentRuns, getUsageSummary, getUsageDaily, getUsageByModel, getRecentApiCalls } from '../db/sqlite';
+import {
+  getRecentRuns,
+  getUsageSummary,
+  getUsageDaily,
+  getUsageByModel,
+  getRecentApiCalls,
+  getOrCreateConversation,
+} from '../db/sqlite';
+import { processMessage } from '../agent/loop';
 import {
   createAndStartTask,
   startTaskLoop,
@@ -841,6 +849,24 @@ export function createApiRouter(): Router {
         return;
       }
       res.json({ status: 'deleted' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== Chat (CLI / Direct) ====================
+
+  router.post('/chat', async (req: Request, res: Response) => {
+    try {
+      const { message, conversationId: convIdParam } = req.body;
+      if (!message || typeof message !== 'string') {
+        res.status(400).json({ error: 'message is required' });
+        return;
+      }
+      const conversationId = convIdParam || getOrCreateConversation('cli', 'cli-session', 'CLI Chat');
+      const reply = await processMessage(conversationId, message, 'cli', 'cli-user');
+      res.json({ reply, conversationId });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });
