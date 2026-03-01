@@ -13,6 +13,8 @@ import {
 import { getContainerStats } from '../agent/container-runner';
 import { isContainerMode } from '../agent/loop';
 import { toolRegistry } from '../agent/tools';
+import { getEdgeConfig } from '../agent/edge-deployment';
+import { config } from '../config';
 import { login, logout, setupAdmin, isSetupRequired } from '../auth/middleware';
 import { getAllSkills, toggleSkill, deleteSkill, installSkill, updateSkill } from '../agent/skills';
 import {
@@ -397,6 +399,8 @@ export function createApiRouter(): Router {
         budgetMaxTokensDay,
         budgetMaxTokensMonth,
         budgetAlertThreshold,
+        hotSwapConfig,
+        fallbackChainConfig,
       } = req.body;
 
       if (!name || !systemPrompt) {
@@ -420,6 +424,8 @@ export function createApiRouter(): Router {
         budgetMaxTokensDay,
         budgetMaxTokensMonth,
         budgetAlertThreshold,
+        hotSwapConfig,
+        fallbackChainConfig,
       });
 
       res.json({
@@ -850,10 +856,23 @@ export function createApiRouter(): Router {
   // ==================== Health ====================
 
   router.get('/health', (_req: Request, res: Response) => {
+    const edgeCfg = getEdgeConfig();
     res.json({
       status: 'ok',
       uptime: process.uptime(),
       containerMode: isContainerMode(),
+      hotSwapEnabled: config.hotSwapEnabled,
+      fallbackEnabled: config.fallbackEnabled,
+      edgeMode: edgeCfg.enabled,
+      edgeConfig: edgeCfg.enabled
+        ? {
+            haikuOnly: edgeCfg.haikuOnly,
+            disableSkills: edgeCfg.disableSkills,
+            maxHistoryMessages: edgeCfg.maxHistoryMessages,
+            maxTokens: edgeCfg.maxTokens,
+            maxConcurrentRequests: edgeCfg.maxConcurrentRequests,
+          }
+        : undefined,
     });
   });
 

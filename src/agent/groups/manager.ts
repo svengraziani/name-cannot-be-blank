@@ -6,6 +6,8 @@ import { v4 as uuid } from 'uuid';
 import { getDb } from '../../db/sqlite';
 import type { AgentGroup, CreateAgentGroupInput, UpdateAgentGroupInput, AgentGroupStats } from './types';
 import { encrypt, decrypt } from './encryption';
+import { DEFAULT_HOT_SWAP_CONFIG } from '../hot-swap';
+import { DEFAULT_FALLBACK_CHAIN } from '../fallback-chain';
 
 /**
  * Initialize the agent_groups table and add agent_group_id to channels.
@@ -65,6 +67,17 @@ export function initAgentGroupsSchema(): void {
     console.log('[groups] Added github_token_encrypted column to agent_groups table');
   }
 
+  // Add hot_swap_config and fallback_chain_config columns (migration-safe)
+  const updatedGroupColumns = db.pragma('table_info(agent_groups)') as Array<{ name: string }>;
+  if (!updatedGroupColumns.some((c) => c.name === 'hot_swap_config')) {
+    db.exec(`ALTER TABLE agent_groups ADD COLUMN hot_swap_config TEXT DEFAULT '{}'`);
+    console.log('[groups] Added hot_swap_config column to agent_groups table');
+  }
+  if (!updatedGroupColumns.some((c) => c.name === 'fallback_chain_config')) {
+    db.exec(`ALTER TABLE agent_groups ADD COLUMN fallback_chain_config TEXT DEFAULT '{}'`);
+    console.log('[groups] Added fallback_chain_config column to agent_groups table');
+  }
+
   console.log('[groups] Agent groups schema initialized');
 }
 
@@ -72,6 +85,18 @@ export function initAgentGroupsSchema(): void {
  * Convert a DB row to an AgentGroup object.
  */
 function rowToGroup(row: Record<string, unknown>): AgentGroup {
+  let hotSwapConfig = DEFAULT_HOT_SWAP_CONFIG;
+  try {
+    const raw = row.hot_swap_config as string;
+    if (raw && raw !== '{}') hotSwapConfig = { ...DEFAULT_HOT_SWAP_CONFIG, ...JSON.parse(raw) };
+  } catch { /* use default */ }
+
+  let fallbackChainConfig = DEFAULT_FALLBACK_CHAIN;
+  try {
+    const raw = row.fallback_chain_config as string;
+    if (raw && raw !== '{}') fallbackChainConfig = { ...DEFAULT_FALLBACK_CHAIN, ...JSON.parse(raw) };
+  } catch { /* use default */ }
+
   return {
     id: row.id as string,
     name: row.name as string,
@@ -89,6 +114,8 @@ function rowToGroup(row: Record<string, unknown>): AgentGroup {
     roles: JSON.parse((row.roles as string) || '[]'),
     containerMode: (row.container_mode as number) === 1,
     maxConcurrentAgents: row.max_concurrent_agents as number,
+    hotSwapConfig,
+    fallbackChainConfig,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -117,8 +144,9 @@ export function createAgentGroup(input: CreateAgentGroupInput): AgentGroup {
       model, max_tokens, github_repo, github_token_encrypted,
       skills, roles,
       container_mode, max_concurrent_agents,
-      budget_max_tokens_day, budget_max_tokens_month, budget_alert_threshold
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      budget_max_tokens_day, budget_max_tokens_month, budget_alert_threshold,
+      hot_swap_config, fallback_chain_config
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     id,
@@ -137,6 +165,8 @@ export function createAgentGroup(input: CreateAgentGroupInput): AgentGroup {
     input.budgetMaxTokensDay || 0,
     input.budgetMaxTokensMonth || 0,
     input.budgetAlertThreshold || 80,
+    JSON.stringify(input.hotSwapConfig || DEFAULT_HOT_SWAP_CONFIG),
+    JSON.stringify(input.fallbackChainConfig || DEFAULT_FALLBACK_CHAIN),
   );
 
   return getAgentGroup(id)!;
@@ -214,6 +244,15 @@ export function updateAgentGroup(id: string, input: UpdateAgentGroupInput): Agen
   if (input.githubRepo !== undefined) {
     sets.push('github_repo = ?');
     values.push(input.githubRepo);
+  }
+
+  if (input.hotSwapConfig !== undefined) {
+    sets.push('hot_swap_config = ?');
+    values.push(JSON.stringify(input.hotSwapConfig));
+  }
+  if (input.fallbackChainConfig !== undefined) {
+    sets.push('fallback_chain_config = ?');
+    values.push(JSON.stringify(input.fallbackChainConfig));
   }
 
   // Handle API key: null = clear, string = encrypt, undefined = no change

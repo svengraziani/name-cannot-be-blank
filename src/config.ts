@@ -7,6 +7,20 @@ export const config = {
   agentMaxTokens: parseInt(process.env.AGENT_MAX_TOKENS || '16384', 10),
   agentSystemPromptFile: process.env.AGENT_SYSTEM_PROMPT_FILE || '/data/system-prompt.md',
 
+  // Hot-Swap Models (global defaults, override per agent group)
+  hotSwapEnabled: process.env.HOT_SWAP_ENABLED === 'true',
+  hotSwapDeescalation: process.env.HOT_SWAP_DEESCALATION !== 'false',
+
+  // Fallback Chains (global defaults)
+  fallbackEnabled: process.env.FALLBACK_ENABLED === 'true',
+  fallbackOpenaiApiKey: process.env.OPENAI_API_KEY || '',
+  fallbackOpenaiModel: process.env.FALLBACK_OPENAI_MODEL || 'gpt-4o',
+  fallbackOllamaUrl: process.env.OLLAMA_URL || 'http://localhost:11434/v1',
+  fallbackOllamaModel: process.env.FALLBACK_OLLAMA_MODEL || 'llama3',
+
+  // Edge Deployment
+  edgeMode: process.env.EDGE_MODE === 'true',
+
   dataDir: process.env.DATA_DIR || '/data',
   dbPath: process.env.DB_PATH || '/data/gateway.db',
 

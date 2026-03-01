@@ -2,6 +2,9 @@
  * Agent Group Types - Data models for agent groups and channel binding.
  */
 
+import type { HotSwapConfig } from '../hot-swap';
+import type { FallbackChainConfig } from '../fallback-chain';
+
 export interface AgentGroup {
   id: string;
   name: string;
@@ -32,6 +35,12 @@ export interface AgentGroup {
   containerMode: boolean;
   maxConcurrentAgents: number;
 
+  // Hot-Swap Models config (per group)
+  hotSwapConfig: HotSwapConfig;
+
+  // Fallback Chain config (per group)
+  fallbackChainConfig: FallbackChainConfig;
+
   createdAt: string;
   updatedAt: string;
 }
@@ -59,6 +68,8 @@ export interface CreateAgentGroupInput {
   roles?: AgentGroupRole[];
   containerMode?: boolean;
   maxConcurrentAgents?: number;
+  hotSwapConfig?: HotSwapConfig;
+  fallbackChainConfig?: FallbackChainConfig;
 }
 
 export interface UpdateAgentGroupInput {
@@ -77,6 +88,8 @@ export interface UpdateAgentGroupInput {
   roles?: AgentGroupRole[];
   containerMode?: boolean;
   maxConcurrentAgents?: number;
+  hotSwapConfig?: HotSwapConfig;
+  fallbackChainConfig?: FallbackChainConfig;
 }
 
 export interface AgentGroupStats {

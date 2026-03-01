@@ -9,11 +9,17 @@ import { initA2ASchema } from './agent/a2a';
 import { initSchedulerSchema, startScheduler, startCalendarPolling } from './scheduler';
 import { initHitlSchema, expireStaleApprovals } from './agent/hitl';
 import { cleanupStaleWorkspaces } from './agent/tools/git-repo';
+import { getEdgeConfig, logEdgeStatus } from './agent/edge-deployment';
 
 async function main() {
   console.log('='.repeat(50));
   console.log('  Loop Gateway - Agentic Loop Manager');
   console.log('='.repeat(50));
+
+  // Log edge deployment status if active
+  logEdgeStatus();
+
+  const edgeCfg = getEdgeConfig();
 
   // Validate required config
   if (!config.anthropicApiKey) {
@@ -27,11 +33,16 @@ async function main() {
   // Register built-in tools (web_browse, run_script, http_request + A2A tools)
   registerBuiltinTools();
 
-  // Export built-in tools as skill manifests to /data/skills/
-  exportBuiltinSkills();
+  // Edge mode: skip skills entirely if disabled
+  if (!edgeCfg.disableSkills) {
+    // Export built-in tools as skill manifests to /data/skills/
+    exportBuiltinSkills();
 
-  // Load custom skills from /data/skills/ and register in tool registry
-  loadAndRegisterSkills();
+    // Load custom skills from /data/skills/ and register in tool registry
+    loadAndRegisterSkills();
+  } else {
+    console.log('[edge] Skills system disabled (edge mode)');
+  }
 
   // Initialize agent runtime (checks container availability)
   await initAgentRuntime();
@@ -60,8 +71,12 @@ async function main() {
   // Start calendar polling (iCal sync)
   startCalendarPolling();
 
-  // Start skills hot-reload watcher
-  startSkillWatcher();
+  // Start skills hot-reload watcher (skip in edge mode)
+  if (!edgeCfg.disableFileWatchers) {
+    startSkillWatcher();
+  } else {
+    console.log('[edge] File watchers disabled (edge mode)');
+  }
 
   // Periodic cleanup of stale approval requests (every 60s)
   setInterval(() => {
@@ -78,6 +93,14 @@ async function main() {
       console.log(`[git] Cleaned up ${cleaned} stale workspace(s)`);
     }
   }, 5 * 60_000);
+
+  // Log feature status
+  if (config.hotSwapEnabled) {
+    console.log('[hot-swap] Hot-Swap Models: ENABLED (global)');
+  }
+  if (config.fallbackEnabled) {
+    console.log('[fallback] Fallback Chains: ENABLED (global)');
+  }
 
   // Start listening
   app.listen(config.port, config.host, () => {

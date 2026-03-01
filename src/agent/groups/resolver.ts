@@ -5,6 +5,7 @@
  * - Which agent group (if any) is assigned to the channel
  * - What system prompt, model, API key, and skills to use
  * - Whether budget limits are exceeded
+ * - Hot-swap and fallback chain settings
  */
 
 import { config } from '../../config';
@@ -16,6 +17,10 @@ import {
   getGroupTokenUsageToday,
   getGroupTokenUsageMonth,
 } from './manager';
+import type { HotSwapConfig } from '../hot-swap';
+import { DEFAULT_HOT_SWAP_CONFIG } from '../hot-swap';
+import type { FallbackChainConfig } from '../fallback-chain';
+import { DEFAULT_FALLBACK_CHAIN } from '../fallback-chain';
 
 export interface ResolvedAgentConfig {
   systemPrompt: string;
@@ -27,6 +32,52 @@ export interface ResolvedAgentConfig {
   containerMode: boolean;
   githubRepo?: string;
   githubToken?: string;
+  hotSwapConfig: HotSwapConfig;
+  fallbackChainConfig: FallbackChainConfig;
+}
+
+/**
+ * Build the global fallback chain from environment variables.
+ */
+function buildGlobalFallbackChain(): FallbackChainConfig {
+  if (!config.fallbackEnabled) return DEFAULT_FALLBACK_CHAIN;
+
+  const providers = [];
+
+  if (config.fallbackOpenaiApiKey) {
+    providers.push({
+      type: 'openai' as const,
+      model: config.fallbackOpenaiModel,
+      apiKey: config.fallbackOpenaiApiKey,
+      maxRetries: 2,
+      timeoutMs: 60000,
+      label: 'OpenAI (GPT-4o)',
+    });
+  }
+
+  if (config.fallbackOllamaUrl) {
+    providers.push({
+      type: 'ollama' as const,
+      model: config.fallbackOllamaModel,
+      baseUrl: config.fallbackOllamaUrl,
+      maxRetries: 1,
+      timeoutMs: 120000,
+      label: 'Ollama (local)',
+    });
+  }
+
+  return {
+    enabled: providers.length > 0,
+    providers,
+  };
+}
+
+/**
+ * Build the global hot-swap config from environment variables.
+ */
+function buildGlobalHotSwapConfig(): HotSwapConfig {
+  if (!config.hotSwapEnabled) return DEFAULT_HOT_SWAP_CONFIG;
+  return { ...DEFAULT_HOT_SWAP_CONFIG, enabled: true, deescalation: config.hotSwapDeescalation };
 }
 
 /**
@@ -45,6 +96,8 @@ export function resolveAgentConfig(channelId: string, defaultSystemPrompt: strin
       maxTokens: config.agentMaxTokens,
       apiKey: config.anthropicApiKey,
       containerMode: process.env.AGENT_CONTAINER_MODE === 'true',
+      hotSwapConfig: buildGlobalHotSwapConfig(),
+      fallbackChainConfig: buildGlobalFallbackChain(),
     };
   }
 
@@ -58,6 +111,8 @@ export function resolveAgentConfig(channelId: string, defaultSystemPrompt: strin
     containerMode: group.containerMode,
     githubRepo: group.githubRepo || undefined,
     githubToken: getGroupGithubToken(group.id) || undefined,
+    hotSwapConfig: group.hotSwapConfig?.enabled ? group.hotSwapConfig : buildGlobalHotSwapConfig(),
+    fallbackChainConfig: group.fallbackChainConfig?.enabled ? group.fallbackChainConfig : buildGlobalFallbackChain(),
   };
 }
 

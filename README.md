@@ -10,6 +10,9 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 
 ## Features
 
+- **Hot-Swap Models** -- Switch models mid-conversation based on complexity. Starts with Haiku for fast answers, auto-escalates to Opus for complex questions. Token-optimized AND quality-optimized. Configurable per agent group.
+- **Fallback Chains** -- Multi-provider failover for zero downtime. Claude down? Auto-switch to GPT-4o. That down too? Local Ollama model. Definable per agent group as a priority list.
+- **Edge Deployment** -- Lightweight mode for Raspberry Pi, VPS with 1GB RAM, IoT, or kiosk systems. Haiku-only mode, skills disabled, no container isolation. SQLite-native.
 - **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), and Email (IMAP/SMTP) adapters
 - **Container Isolation** -- Run each agent call in an isolated Docker container (nanoclaw pattern: secrets via stdin, no network leaks)
 - **Loop Mode** -- Autonomous task execution with prompt files (ralph-wiggum pattern: plan/build loops)
@@ -85,8 +88,11 @@ npm run dev
                ▼
 ┌──────────────────────────────────────────────────┐
 │  Agent Loop                                      │
+│  - Hot-Swap: Haiku → Sonnet → Opus by complexity │
+│  - Fallback: Claude → GPT-4o → Ollama           │
 │  - Direct mode: API call in-process              │
 │  - Container mode: isolated Docker per call      │
+│  - Edge mode: lightweight for IoT/kiosk          │
 │  - Token usage logging                           │
 │  - HITL approval checks before tool execution    │
 └──────────┬──────────────────┬────────────────────┘
@@ -157,9 +163,172 @@ docker compose up -d --build
 | `MAX_CONCURRENT_CONTAINERS` | `3` | Max parallel agent containers |
 | `CONTAINER_TIMEOUT_MS` | `600000` | Container timeout (10 min) |
 
+> **Note**: Container isolation is automatically disabled in [Edge Deployment](#edge-deployment) mode.
+
+## Hot-Swap Models
+
+Automatically switch models mid-conversation without losing context. The system analyzes each message's complexity and selects the optimal model tier:
+
+- **Haiku** (complexity 0-40) -- Fast, cheap responses for simple questions
+- **Sonnet** (complexity 41-75) -- Balanced quality for moderate tasks
+- **Opus** (complexity 76-100) -- Maximum quality for complex reasoning, code generation, multi-step analysis
+
+Complexity is computed from message length, code blocks, technical terms, multi-step reasoning, conversation depth, and explicit detail requests.
+
+### Enable globally
+
+```bash
+# In .env
+HOT_SWAP_ENABLED=true
+HOT_SWAP_DEESCALATION=true  # allow switching back to cheaper models
+```
+
+### Enable per agent group
+
+```bash
+curl -X PUT http://localhost:3000/api/agent-groups/GROUP_ID \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "hotSwapConfig": {
+      "enabled": true,
+      "tiers": [
+        { "model": "claude-haiku-4-5-20251001", "maxComplexity": 40, "label": "Haiku (fast)" },
+        { "model": "claude-sonnet-4-20250514", "maxComplexity": 75, "label": "Sonnet (balanced)" },
+        { "model": "claude-opus-4-20250514", "maxComplexity": 100, "label": "Opus (max quality)" }
+      ],
+      "escalationThreshold": 40,
+      "deescalation": true
+    }
+  }'
+```
+
+### How it works
+
+```
+User: "Hi"                    → Haiku   (complexity: 5)
+User: "What is 2+2?"          → Haiku   (complexity: 10)
+User: "Write a REST API with  → Opus    (complexity: 85)
+       authentication, rate
+       limiting, and tests"
+User: "Thanks!"               → Haiku   (complexity: 5, de-escalated)
+```
+
+Events emitted: `model:hot-swap` (via WebSocket for real-time UI).
+
+## Fallback Chains
+
+Multi-provider failover for zero downtime. When the primary Claude API is down (network error, 5xx, rate limit, overloaded), the system automatically tries fallback providers in order.
+
+### Default chain
+
+```
+Claude (primary) → GPT-4o (OpenAI) → Llama 3 (Ollama local)
+```
+
+### Enable globally
+
+```bash
+# In .env
+FALLBACK_ENABLED=true
+OPENAI_API_KEY=sk-...
+FALLBACK_OPENAI_MODEL=gpt-4o
+OLLAMA_URL=http://localhost:11434/v1
+FALLBACK_OLLAMA_MODEL=llama3
+```
+
+### Enable per agent group
+
+```bash
+curl -X PUT http://localhost:3000/api/agent-groups/GROUP_ID \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "fallbackChainConfig": {
+      "enabled": true,
+      "providers": [
+        {
+          "type": "openai",
+          "model": "gpt-4o",
+          "apiKey": "sk-...",
+          "maxRetries": 2,
+          "timeoutMs": 60000,
+          "label": "OpenAI GPT-4o"
+        },
+        {
+          "type": "ollama",
+          "model": "llama3",
+          "baseUrl": "http://localhost:11434/v1",
+          "maxRetries": 1,
+          "timeoutMs": 120000,
+          "label": "Ollama (local)"
+        }
+      ]
+    }
+  }'
+```
+
+### Supported providers
+
+| Provider | Type | Notes |
+|----------|------|-------|
+| OpenAI | `openai` | GPT-4o, GPT-4-turbo, etc. Requires API key |
+| Ollama | `ollama` | Any local model. No API key needed |
+| Any OpenAI-compatible | `openai` | Set custom `baseUrl` |
+
+Events emitted: `fallback:start`, `fallback:success` (via WebSocket).
+
+## Edge Deployment
+
+Lightweight mode for resource-constrained environments. Run Loop Gateway on a Raspberry Pi, VPS with 1GB RAM, or IoT/kiosk systems.
+
+### Enable edge mode
+
+```bash
+# In .env
+EDGE_MODE=true
+```
+
+### What edge mode changes
+
+| Setting | Default | Edge Mode |
+|---------|---------|-----------|
+| Model | Sonnet | Haiku only |
+| Skills | Enabled | Disabled |
+| Container isolation | Configurable | Disabled |
+| File watchers | Enabled | Disabled |
+| Max history | 20 messages | 8 messages |
+| Max tokens | 16384 | 4096 |
+| Max concurrent | 10 | 2 |
+
+### Configuration
+
+| Variable | Default (edge) | Description |
+|----------|---------------|-------------|
+| `EDGE_MODE` | `false` | Enable edge deployment mode |
+| `EDGE_HAIKU_ONLY` | `true` | Force Haiku model for all requests |
+| `EDGE_DISABLE_SKILLS` | `true` | Disable skills system entirely |
+| `EDGE_MAX_HISTORY` | `8` | Max conversation messages to load |
+| `EDGE_MAX_TOKENS` | `4096` | Max tokens per response |
+| `EDGE_MAX_CONCURRENT` | `2` | Max concurrent requests |
+
+### Example: Raspberry Pi kiosk
+
+```bash
+# .env for a Raspberry Pi info kiosk
+ANTHROPIC_API_KEY=sk-ant-xxxxx
+EDGE_MODE=true
+EDGE_HAIKU_ONLY=true
+EDGE_MAX_CONCURRENT=1
+PORT=8080
+
+# Start
+npm start
+```
+
 ## Agent Groups
 
-Agent groups let you define separate agent configurations and bind them to channels. Each group can have its own system prompt, model, API key, skill set, and token budget.
+Agent groups let you define separate agent configurations and bind them to channels. Each group can have its own system prompt, model, API key, skill set, token budget, hot-swap config, and fallback chain.
 
 ### Via the API
 
@@ -434,7 +603,10 @@ All endpoints require authentication (session token) unless the system is in set
 │   ├── index.ts                    # Entry point
 │   ├── config.ts                   # Environment configuration
 │   ├── agent/
-│   │   ├── loop.ts                 # Agent loop (direct + container modes)
+│   │   ├── loop.ts                 # Agent loop (direct + container + fallback modes)
+│   │   ├── hot-swap.ts             # Hot-Swap Models (complexity analysis + tier selection)
+│   │   ├── fallback-chain.ts       # Fallback Chains (multi-provider failover)
+│   │   ├── edge-deployment.ts      # Edge Deployment (lightweight mode config)
 │   │   ├── container-runner.ts     # Docker container spawning
 │   │   ├── loop-mode.ts            # Autonomous task loop
 │   │   ├── a2a/                    # Agent-to-Agent protocol

@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import * as fs from 'fs';
 import { config } from '../config';
-import { getConversationMessages, addMessage, createAgentRun, updateAgentRun, logApiCall } from '../db/sqlite';
+import { getConversationMessages, addMessage, createAgentRun, updateAgentRun, logApiCall, countConversationMessages } from '../db/sqlite';
 import { runInContainer, checkContainerRuntime, ContainerInput } from './container-runner';
 import { toolRegistry } from './tools';
 import { EventEmitter } from 'events';
@@ -9,6 +9,9 @@ import { ResolvedAgentConfig } from './groups/resolver';
 import { setA2AContext } from './a2a';
 import { checkApprovalRequired, requestApproval } from './hitl';
 import { setGitContext } from './tools/git-repo';
+import { resolveHotSwapModel } from './hot-swap';
+import { executeFallbackChain, isRetryableError } from './fallback-chain';
+import { getEdgeConfig, applyEdgeModel, applyEdgeMaxTokens, applyEdgeHistoryLimit, acquireRequest, releaseRequest } from './edge-deployment';
 
 export const agentEvents = new EventEmitter();
 
@@ -47,6 +50,9 @@ interface AgentResponse {
   inputTokens: number;
   outputTokens: number;
   toolCalls: number;
+  modelUsed?: string;
+  fallbackUsed?: boolean;
+  hotSwapped?: boolean;
 }
 
 // Maximum number of tool-use iterations per message to prevent runaway loops
@@ -57,6 +63,14 @@ let containerMode = process.env.AGENT_CONTAINER_MODE === 'true';
 let containerAvailable = false;
 
 export async function initAgentRuntime(): Promise<void> {
+  const edgeCfg = getEdgeConfig();
+
+  // Edge mode disables containers
+  if (edgeCfg.enabled && edgeCfg.disableContainers) {
+    containerMode = false;
+    console.log('[agent] Edge mode: container isolation disabled');
+  }
+
   if (containerMode) {
     const check = await checkContainerRuntime();
     if (check.available) {
@@ -80,9 +94,11 @@ export function isContainerMode(): boolean {
  * Process a message through the agent loop:
  * 1. Load conversation history
  * 2. Build context (system prompt + history + new message)
- * 3. Call Claude API with tools (agentic loop)
- * 4. Store response + track usage
- * 5. Emit events for UI
+ * 3. Hot-swap model selection based on message complexity
+ * 4. Call Claude API with tools (agentic loop)
+ * 5. On failure, attempt fallback chain (GPT-4o → Ollama)
+ * 6. Store response + track usage
+ * 7. Emit events for UI
  *
  * Optionally accepts a ResolvedAgentConfig for group-specific settings.
  */
@@ -94,110 +110,222 @@ export async function processMessage(
   enabledTools?: string[],
   agentConfig?: ResolvedAgentConfig,
 ): Promise<string> {
-  // Store user message
-  const msgId = addMessage(conversationId, 'user', userMessage, channelType, sender);
-  const runId = createAgentRun(conversationId, msgId);
-
-  agentEvents.emit('run:start', { runId, conversationId, channelType, groupId: agentConfig?.groupId });
+  // Edge mode: check concurrency limit
+  const edgeCfg = getEdgeConfig();
+  if (edgeCfg.enabled && !acquireRequest()) {
+    return '(Server is at capacity. Please try again in a moment.)';
+  }
 
   try {
-    updateAgentRun(runId, { status: 'running' });
+    // Store user message
+    const msgId = addMessage(conversationId, 'user', userMessage, channelType, sender);
+    const runId = createAgentRun(conversationId, msgId);
 
-    // Build conversation context
-    const history = getConversationMessages(conversationId, 20);
-    const messages: Anthropic.MessageParam[] = history.map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
+    agentEvents.emit('run:start', { runId, conversationId, channelType, groupId: agentConfig?.groupId });
 
-    // Determine effective settings (group config or global defaults)
-    const effectiveModel = agentConfig?.model || config.agentModel;
-    const effectiveMaxTokens = agentConfig?.maxTokens || config.agentMaxTokens;
-    const effectiveSystemPrompt = agentConfig?.systemPrompt || systemPrompt;
-    const effectiveApiKey = agentConfig?.apiKey || config.anthropicApiKey;
-    const effectiveTools = agentConfig?.enabledSkills || enabledTools;
-    const useContainer = agentConfig?.containerMode ?? isContainerMode();
+    try {
+      updateAgentRun(runId, { status: 'running' });
 
-    // Set A2A context so delegate_task and other A2A tools work correctly
-    setA2AContext({
-      groupId: agentConfig?.groupId || '',
-      agentId: `agent-${runId}`,
-      conversationId,
-    });
+      // Build conversation context (edge mode limits history depth)
+      const historyLimit = applyEdgeHistoryLimit(20);
+      const history = getConversationMessages(conversationId, historyLimit);
+      const messages: Anthropic.MessageParam[] = history.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }));
 
-    // Set Git context so git_clone can resolve repo/token from group config
-    setGitContext({
-      githubRepo: agentConfig?.githubRepo,
-      githubToken: agentConfig?.githubToken,
-    });
+      // Determine effective settings (group config or global defaults)
+      let effectiveModel = agentConfig?.model || config.agentModel;
+      let effectiveMaxTokens = agentConfig?.maxTokens || config.agentMaxTokens;
+      const effectiveSystemPrompt = agentConfig?.systemPrompt || systemPrompt;
+      const effectiveApiKey = agentConfig?.apiKey || config.anthropicApiKey;
+      const effectiveTools = agentConfig?.enabledSkills || enabledTools;
+      let useContainer = agentConfig?.containerMode ?? isContainerMode();
 
-    // Call Claude - either via container or directly
-    let response: AgentResponse;
-    const startTime = Date.now();
+      // Edge mode overrides
+      effectiveModel = applyEdgeModel(effectiveModel);
+      effectiveMaxTokens = applyEdgeMaxTokens(effectiveMaxTokens);
+      if (edgeCfg.enabled && edgeCfg.disableContainers) {
+        useContainer = false;
+      }
 
-    if (useContainer && containerAvailable) {
-      response = await callAgentContainer(
-        messages,
-        effectiveSystemPrompt,
-        effectiveModel,
-        effectiveMaxTokens,
-        effectiveApiKey,
-      );
-    } else {
-      response = await callAgentDirect(
-        messages,
-        effectiveTools,
+      // --- Hot-Swap Model Selection ---
+      const hotSwapConfig = agentConfig?.hotSwapConfig;
+      let hotSwapped = false;
+      if (hotSwapConfig?.enabled) {
+        const conversationLength = countConversationMessages(conversationId);
+        const hotSwapResult = resolveHotSwapModel(
+          conversationId,
+          userMessage,
+          conversationLength,
+          hotSwapConfig,
+          effectiveModel,
+        );
+        if (hotSwapResult.tier) {
+          effectiveModel = applyEdgeModel(hotSwapResult.model); // edge mode can override hot-swap too
+          hotSwapped = hotSwapResult.swapped;
+
+          if (hotSwapResult.swapped) {
+            console.log(
+              `[hot-swap] Model switched to ${hotSwapResult.tier.label} (complexity: ${hotSwapResult.complexity.score}, reasons: ${hotSwapResult.complexity.reasons.join(', ')})`,
+            );
+            agentEvents.emit('model:hot-swap', {
+              runId,
+              conversationId,
+              from: agentConfig?.model || config.agentModel,
+              to: hotSwapResult.model,
+              complexity: hotSwapResult.complexity,
+              tier: hotSwapResult.tier.label,
+            });
+          }
+        }
+      }
+
+      // Set A2A context so delegate_task and other A2A tools work correctly
+      setA2AContext({
+        groupId: agentConfig?.groupId || '',
+        agentId: `agent-${runId}`,
+        conversationId,
+      });
+
+      // Set Git context so git_clone can resolve repo/token from group config
+      setGitContext({
+        githubRepo: agentConfig?.githubRepo,
+        githubToken: agentConfig?.githubToken,
+      });
+
+      // Call Claude - either via container or directly
+      let response: AgentResponse;
+      const startTime = Date.now();
+      let actualModelUsed = effectiveModel;
+      let fallbackUsed = false;
+
+      try {
+        if (useContainer && containerAvailable) {
+          response = await callAgentContainer(
+            messages,
+            effectiveSystemPrompt,
+            effectiveModel,
+            effectiveMaxTokens,
+            effectiveApiKey,
+          );
+        } else {
+          // Edge mode: disable skills if configured
+          const toolsToUse = edgeCfg.enabled && edgeCfg.disableSkills ? undefined : effectiveTools;
+
+          response = await callAgentDirect(
+            messages,
+            toolsToUse,
+            runId,
+            conversationId,
+            agentConfig?.groupId,
+            effectiveSystemPrompt,
+            effectiveModel,
+            effectiveMaxTokens,
+            effectiveApiKey,
+          );
+        }
+      } catch (primaryError) {
+        // --- Fallback Chain ---
+        const fallbackConfig = agentConfig?.fallbackChainConfig;
+        if (
+          fallbackConfig?.enabled &&
+          primaryError instanceof Error &&
+          isRetryableError(primaryError)
+        ) {
+          console.log(`[fallback] Primary provider failed, attempting fallback chain...`);
+          agentEvents.emit('fallback:start', {
+            runId,
+            conversationId,
+            primaryError: primaryError.message,
+          });
+
+          const simpleMessages = messages.map((m) => ({
+            role: m.role as string,
+            content: typeof m.content === 'string' ? m.content : '(tool interaction)',
+          }));
+
+          const fallbackResult = await executeFallbackChain(
+            fallbackConfig,
+            effectiveSystemPrompt,
+            simpleMessages,
+            effectiveMaxTokens,
+            primaryError,
+          );
+
+          actualModelUsed = `${fallbackResult.provider.type}:${fallbackResult.provider.model}`;
+          fallbackUsed = true;
+
+          response = {
+            content: fallbackResult.content,
+            inputTokens: fallbackResult.inputTokens,
+            outputTokens: fallbackResult.outputTokens,
+            toolCalls: 0,
+            modelUsed: actualModelUsed,
+            fallbackUsed: true,
+          };
+
+          console.log(`[fallback] Succeeded via ${fallbackResult.provider.label}`);
+          agentEvents.emit('fallback:success', {
+            runId,
+            conversationId,
+            provider: fallbackResult.provider.label,
+            attempts: fallbackResult.attempts.length,
+          });
+        } else {
+          throw primaryError;
+        }
+      }
+
+      const durationMs = Date.now() - startTime;
+
+      // Log API call for usage tracking
+      logApiCall({
+        conversation_id: conversationId,
+        model: actualModelUsed,
+        input_tokens: response.inputTokens,
+        output_tokens: response.outputTokens,
+        duration_ms: durationMs,
+        isolated: useContainer && containerAvailable,
+        agent_group_id: agentConfig?.groupId,
+      });
+
+      // Store assistant response
+      addMessage(conversationId, 'assistant', response.content, channelType);
+
+      updateAgentRun(runId, {
+        status: 'completed',
+        input_tokens: response.inputTokens,
+        output_tokens: response.outputTokens,
+      });
+
+      agentEvents.emit('run:complete', {
         runId,
         conversationId,
-        agentConfig?.groupId,
-        effectiveSystemPrompt,
-        effectiveModel,
-        effectiveMaxTokens,
-        effectiveApiKey,
-      );
+        channelType,
+        groupId: agentConfig?.groupId,
+        inputTokens: response.inputTokens,
+        outputTokens: response.outputTokens,
+        toolCalls: response.toolCalls,
+        durationMs,
+        containerMode: useContainer,
+        modelUsed: actualModelUsed,
+        hotSwapped,
+        fallbackUsed,
+      });
+
+      return response.content;
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      updateAgentRun(runId, { status: 'error', error: errorMsg });
+      agentEvents.emit('run:error', { runId, conversationId, error: errorMsg });
+      console.error('[agent] Error processing message:', errorMsg);
+      throw err;
     }
-
-    const durationMs = Date.now() - startTime;
-
-    // Log API call for usage tracking
-    logApiCall({
-      conversation_id: conversationId,
-      model: effectiveModel,
-      input_tokens: response.inputTokens,
-      output_tokens: response.outputTokens,
-      duration_ms: durationMs,
-      isolated: useContainer && containerAvailable,
-      agent_group_id: agentConfig?.groupId,
-    });
-
-    // Store assistant response
-    addMessage(conversationId, 'assistant', response.content, channelType);
-
-    updateAgentRun(runId, {
-      status: 'completed',
-      input_tokens: response.inputTokens,
-      output_tokens: response.outputTokens,
-    });
-
-    agentEvents.emit('run:complete', {
-      runId,
-      conversationId,
-      channelType,
-      groupId: agentConfig?.groupId,
-      inputTokens: response.inputTokens,
-      outputTokens: response.outputTokens,
-      toolCalls: response.toolCalls,
-      durationMs,
-      containerMode: useContainer,
-    });
-
-    return response.content;
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    updateAgentRun(runId, { status: 'error', error: errorMsg });
-    agentEvents.emit('run:error', { runId, conversationId, error: errorMsg });
-    console.error('[agent] Error processing message:', errorMsg);
-    throw err;
+  } finally {
+    if (edgeCfg.enabled) {
+      releaseRequest();
+    }
   }
 }
 
@@ -217,7 +345,8 @@ async function callAgentDirect(
   overrideMaxTokens?: number,
   overrideApiKey?: string,
 ): Promise<AgentResponse> {
-  const tools = toolRegistry.getToolDefinitions(enabledTools);
+  const edgeCfg = getEdgeConfig();
+  const tools = edgeCfg.enabled && edgeCfg.disableSkills ? [] : toolRegistry.getToolDefinitions(enabledTools);
   const currentMessages = [...messages];
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
@@ -257,6 +386,7 @@ async function callAgentDirect(
         inputTokens: totalInputTokens,
         outputTokens: totalOutputTokens,
         toolCalls: totalToolCalls,
+        modelUsed: model,
       };
     }
 
