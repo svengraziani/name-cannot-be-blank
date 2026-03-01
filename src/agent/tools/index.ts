@@ -2,6 +2,7 @@ import { toolRegistry } from './registry';
 import { webBrowseTool } from './web-browse';
 import { runScriptTool } from './run-script';
 import { httpRequestTool } from './http-request';
+import { capcutApiTool } from './capcut-api';
 import { delegateTaskTool, broadcastEventTool, queryAgentsTool } from '../a2a/tools';
 import { gitCloneTool, gitReadFileTool, gitWriteFileTool, gitCommitPushTool } from './git-repo';
 
@@ -13,6 +14,7 @@ export function registerBuiltinTools(): void {
   toolRegistry.register(webBrowseTool);
   toolRegistry.register(runScriptTool);
   toolRegistry.register(httpRequestTool);
+  toolRegistry.register(capcutApiTool);
 
   // A2A tools
   toolRegistry.register(delegateTaskTool);
