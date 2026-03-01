@@ -13,6 +13,7 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 - **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), and Email (IMAP/SMTP) adapters
 - **Container Isolation** -- Run each agent call in an isolated Docker container (nanoclaw pattern: secrets via stdin, no network leaks)
 - **Loop Mode** -- Autonomous task execution with prompt files (ralph-wiggum pattern: plan/build loops)
+- **Template Gallery** -- Pre-built agent group templates (Customer Support Bot, Order Tracking Agent, Daily Summary Generator, Content Creator) with one-click import including system prompts, skills, approval rules, and scheduler jobs
 - **Agent Groups** -- Group agents with per-group system prompts, model selection, skills, budgets (daily/monthly token caps), and channel binding
 - **Agent-to-Agent (A2A) Protocol** -- Multi-agent coordination with message bus, sub-agent spawning, predefined roles, task delegation, and broadcasting
 - **Human-in-the-Loop (HITL)** -- Approval workflows with configurable risk levels per tool, auto-approve rules, timeouts, and real-time WebSocket notifications
@@ -156,6 +157,49 @@ docker compose up -d --build
 | `AGENT_CONTAINER_MODE` | `false` | Enable container isolation |
 | `MAX_CONCURRENT_CONTAINERS` | `3` | Max parallel agent containers |
 | `CONTAINER_TIMEOUT_MS` | `600000` | Container timeout (10 min) |
+
+## Template Gallery
+
+The Template Gallery provides pre-built agent group templates that can be imported with a single click. Each template comes fully configured with a system prompt, skills, approval rules, and optional scheduler jobs -- dramatically lowering the barrier to getting started.
+
+### Available Templates
+
+| Template | Category | Description |
+|----------|----------|-------------|
+| **Customer Support Bot** | Support | Friendly support agent with FAQ handling, ticket tracking, and escalation logic |
+| **Order Tracking Agent** | E-Commerce | Tracks orders, checks delivery status, proactive notifications. Includes a 30-min status check scheduler job |
+| **Daily Summary Generator** | Productivity | Automated daily briefings with news, metrics, and calendar events. Includes morning briefing and weekly recap jobs |
+| **Content Creator** | Marketing | AI-powered content creation for social media, blogs, and marketing. Includes weekly content ideas generator |
+
+### Via the Web UI
+
+1. Go to the **Templates** tab
+2. Browse available templates
+3. Click **Details** to preview the full configuration
+4. Click **Importieren** to create the agent group with all pre-configured settings
+
+### Via the API
+
+```bash
+# List all available templates
+curl http://localhost:3000/api/templates \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Preview a specific template
+curl http://localhost:3000/api/templates/customer-support-bot \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Import a template (creates agent group + approval rules + scheduler jobs)
+curl -X POST http://localhost:3000/api/templates/daily-summary-generator/import \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{"name": "My Daily Summary"}'
+```
+
+Each import creates:
+- A new **Agent Group** with the template's system prompt, model, skills, and budget settings
+- **Approval Rules** for the tools used by the template
+- **Scheduler Jobs** (if any) linked to the new agent group
 
 ## Agent Groups
 
@@ -309,6 +353,14 @@ All endpoints require authentication (session token) unless the system is in set
 | PUT | `/api/channels/:id` | Update channel config |
 | DELETE | `/api/channels/:id` | Delete a channel |
 
+### Template Gallery
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/templates` | List all available templates |
+| GET | `/api/templates/:id` | Get template details |
+| POST | `/api/templates/:id/import` | Import template (creates group + rules + jobs) |
+
 ### Agent Groups
 
 | Method | Endpoint | Description |
@@ -446,6 +498,7 @@ All endpoints require authentication (session token) unless the system is in set
 │   │   │   ├── manager.ts          # CRUD, channel binding, budgets
 │   │   │   ├── encryption.ts       # API key encryption
 │   │   │   ├── resolver.ts         # Group resolution for channels
+│   │   │   ├── templates.ts        # Template Gallery definitions
 │   │   │   └── types.ts            # Group type definitions
 │   │   ├── hitl/                   # Human-in-the-Loop approvals
 │   │   │   ├── db.ts               # Approval persistence + rules
