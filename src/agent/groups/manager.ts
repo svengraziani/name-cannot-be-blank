@@ -4,7 +4,8 @@
 
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../../db/sqlite';
-import type { AgentGroup, CreateAgentGroupInput, UpdateAgentGroupInput, AgentGroupStats } from './types';
+import type { AgentGroup, CreateAgentGroupInput, UpdateAgentGroupInput, AgentGroupStats, PersonaConfig } from './types';
+import { DEFAULT_PERSONA } from './types';
 import { encrypt, decrypt } from './encryption';
 
 /**
@@ -65,7 +66,24 @@ export function initAgentGroupsSchema(): void {
     console.log('[groups] Added github_token_encrypted column to agent_groups table');
   }
 
+  // Re-read columns after potential migrations above
+  const updatedGroupColumns = db.pragma('table_info(agent_groups)') as Array<{ name: string }>;
+  if (!updatedGroupColumns.some((c) => c.name === 'persona')) {
+    db.exec(`ALTER TABLE agent_groups ADD COLUMN persona TEXT DEFAULT '${JSON.stringify(DEFAULT_PERSONA)}'`);
+    console.log('[groups] Added persona column to agent_groups table');
+  }
+
   console.log('[groups] Agent groups schema initialized');
+}
+
+function parsePersona(raw: string | null): PersonaConfig {
+  if (!raw) return { ...DEFAULT_PERSONA };
+  try {
+    const parsed = JSON.parse(raw) as Partial<PersonaConfig>;
+    return { ...DEFAULT_PERSONA, ...parsed };
+  } catch {
+    return { ...DEFAULT_PERSONA };
+  }
 }
 
 /**
@@ -87,6 +105,7 @@ function rowToGroup(row: Record<string, unknown>): AgentGroup {
     budgetAlertThreshold: row.budget_alert_threshold as number,
     skills: JSON.parse((row.skills as string) || '[]'),
     roles: JSON.parse((row.roles as string) || '[]'),
+    persona: parsePersona(row.persona as string | null),
     containerMode: (row.container_mode as number) === 1,
     maxConcurrentAgents: row.max_concurrent_agents as number,
     createdAt: row.created_at as string,
@@ -110,15 +129,17 @@ export function createAgentGroup(input: CreateAgentGroupInput): AgentGroup {
     githubTokenEncrypted = encrypt(input.githubToken);
   }
 
+  const persona: PersonaConfig = { ...DEFAULT_PERSONA, ...input.persona };
+
   db.prepare(
     `
     INSERT INTO agent_groups (
       id, name, description, system_prompt, api_key_encrypted,
       model, max_tokens, github_repo, github_token_encrypted,
-      skills, roles,
+      skills, roles, persona,
       container_mode, max_concurrent_agents,
       budget_max_tokens_day, budget_max_tokens_month, budget_alert_threshold
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     id,
@@ -132,6 +153,7 @@ export function createAgentGroup(input: CreateAgentGroupInput): AgentGroup {
     githubTokenEncrypted,
     JSON.stringify(input.skills || []),
     JSON.stringify(input.roles || []),
+    JSON.stringify(persona),
     input.containerMode ? 1 : 0,
     input.maxConcurrentAgents || 3,
     input.budgetMaxTokensDay || 0,
@@ -211,6 +233,12 @@ export function updateAgentGroup(id: string, input: UpdateAgentGroupInput): Agen
     values.push(input.budgetAlertThreshold);
   }
 
+  if (input.persona !== undefined) {
+    // Merge with existing persona so partial updates work
+    const merged: PersonaConfig = { ...existing.persona, ...input.persona };
+    sets.push('persona = ?');
+    values.push(JSON.stringify(merged));
+  }
   if (input.githubRepo !== undefined) {
     sets.push('github_repo = ?');
     values.push(input.githubRepo);

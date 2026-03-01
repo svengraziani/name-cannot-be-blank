@@ -8,7 +8,12 @@ export type {
   CreateAgentGroupInput,
   UpdateAgentGroupInput,
   AgentGroupStats,
+  PersonaConfig,
+  EmojiUsage,
+  PersonaLanguage,
 } from './types';
+export { DEFAULT_PERSONA } from './types';
+export { detectLanguage, resolveLanguage, buildPersonaPrompt, synthesizeSpeech } from './persona';
 export {
   initAgentGroupsSchema,
   createAgentGroup,

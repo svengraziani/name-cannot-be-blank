@@ -20,6 +20,7 @@ import { processMessage } from '../agent/loop';
 import { resolveAgentConfig, checkGroupBudget } from '../agent/groups/resolver';
 import { getSystemPrompt } from '../agent/loop';
 import { respondToApproval, approvalEvents } from '../agent/hitl';
+import { synthesizeSpeech } from '../agent/groups/persona';
 import { EventEmitter } from 'events';
 
 export const channelManagerEvents = new EventEmitter();
@@ -38,16 +39,19 @@ const conversationProcessing = new Set<string>();
 const messageQueue = new Map<string, QueuedMessage[]>();
 
 // Listen for approval requests and forward to the originating channel
-approvalEvents.on('approval:required', (approval: { id: string; conversationId: string; toolName: string; riskLevel: string }) => {
-  const conv = getConversation(approval.conversationId);
-  if (!conv) return;
-  const adapter = adapters.get(conv.channelId);
-  if (!adapter || adapter.status !== 'connected') return;
+approvalEvents.on(
+  'approval:required',
+  (approval: { id: string; conversationId: string; toolName: string; riskLevel: string }) => {
+    const conv = getConversation(approval.conversationId);
+    if (!conv) return;
+    const adapter = adapters.get(conv.channelId);
+    if (!adapter || adapter.status !== 'connected') return;
 
-  adapter.sendApprovalPrompt(conv.externalId, approval.id, approval.toolName, approval.riskLevel).catch((err) => {
-    console.error(`[manager] Failed to send approval prompt:`, err);
-  });
-});
+    adapter.sendApprovalPrompt(conv.externalId, approval.id, approval.toolName, approval.riskLevel).catch((err) => {
+      console.error(`[manager] Failed to send approval prompt:`, err);
+    });
+  },
+);
 
 /**
  * Initialize channels from database on startup.
@@ -217,10 +221,18 @@ async function startChannel(ch: ChannelRow): Promise<void> {
         const reason = (match[2] as string | undefined)?.trim() || undefined;
         const ok = respondToApproval(approvalId, isApprove, reason, msg.sender);
         if (ok) {
-          console.log(`[manager] ${isApprove ? 'Approved' : 'Rejected'} ${approvalId} via ${msg.channelType} by ${msg.sender}`);
-          await adapter.sendMessage(msg.externalChatId, `${isApprove ? 'Approved' : 'Rejected'} ${approvalId.slice(0, 8)}...`);
+          console.log(
+            `[manager] ${isApprove ? 'Approved' : 'Rejected'} ${approvalId} via ${msg.channelType} by ${msg.sender}`,
+          );
+          await adapter.sendMessage(
+            msg.externalChatId,
+            `${isApprove ? 'Approved' : 'Rejected'} ${approvalId.slice(0, 8)}...`,
+          );
         } else {
-          await adapter.sendMessage(msg.externalChatId, `Approval ${approvalId.slice(0, 8)}... not found or already resolved.`);
+          await adapter.sendMessage(
+            msg.externalChatId,
+            `Approval ${approvalId.slice(0, 8)}... not found or already resolved.`,
+          );
         }
         return;
       }
@@ -341,7 +353,7 @@ async function handleConversationMessage(
       }
     }
 
-    const reply = await processMessage(
+    const result = await processMessage(
       conversationId,
       msg.text,
       msg.channelType,
@@ -349,12 +361,30 @@ async function handleConversationMessage(
       enabledTools,
       agentConfig,
     );
-    await adapter.sendMessage(msg.externalChatId, reply);
+
+    // Always send the text reply
+    await adapter.sendMessage(msg.externalChatId, result.content);
+
+    // If persona has voice enabled, also send a voice message
+    if (result.persona?.voiceEnabled && typeof adapter.sendVoice === 'function') {
+      const lang = result.detectedLanguage || 'en';
+      const audio = await synthesizeSpeech(result.content, lang, result.persona.voiceSpeed);
+      if (audio) {
+        try {
+          await adapter.sendVoice(msg.externalChatId, audio);
+        } catch (voiceErr) {
+          console.warn(
+            '[manager] Voice message failed, text was already sent:',
+            voiceErr instanceof Error ? voiceErr.message : voiceErr,
+          );
+        }
+      }
+    }
 
     channelManagerEvents.emit('message:reply', {
       channelId: msg.channelId,
       channelType: msg.channelType,
-      replyLength: reply.length,
+      replyLength: result.content.length,
       groupId: agentConfig.groupId,
     });
   } catch (err) {
@@ -390,9 +420,10 @@ async function drainMessageQueue(conversationId: string): Promise<void> {
   const last = pending[pending.length - 1]!;
 
   // Merge all queued messages into one so the agent processes them as a batch
-  const combinedText = pending.length === 1
-    ? pending[0]!.msg.text
-    : pending.map((q, i) => `[Message ${i + 1}]: ${q.msg.text}`).join('\n\n');
+  const combinedText =
+    pending.length === 1
+      ? pending[0]!.msg.text
+      : pending.map((q, i) => `[Message ${i + 1}]: ${q.msg.text}`).join('\n\n');
 
   const mergedMsg: IncomingMessage = {
     ...last.msg,

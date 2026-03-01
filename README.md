@@ -14,6 +14,7 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 - **Container Isolation** -- Run each agent call in an isolated Docker container (nanoclaw pattern: secrets via stdin, no network leaks)
 - **Loop Mode** -- Autonomous task execution with prompt files (ralph-wiggum pattern: plan/build loops)
 - **Agent Groups** -- Group agents with per-group system prompts, model selection, skills, budgets (daily/monthly token caps), and channel binding
+- **Agent Personas & Voice** -- Give each agent group a personality: response style, emoji usage, automatic language detection (DE/EN), and text-to-speech voice messages via Telegram
 - **Agent-to-Agent (A2A) Protocol** -- Multi-agent coordination with message bus, sub-agent spawning, predefined roles, task delegation, and broadcasting
 - **Human-in-the-Loop (HITL)** -- Approval workflows with configurable risk levels per tool, auto-approve rules, timeouts, and real-time WebSocket notifications
 - **Skills System** -- Dynamic, file-based tool extensions. Built-in tools are exported as skills; custom skills can be uploaded, toggled, and hot-reloaded
@@ -156,6 +157,8 @@ docker compose up -d --build
 | `AGENT_CONTAINER_MODE` | `false` | Enable container isolation |
 | `MAX_CONCURRENT_CONTAINERS` | `3` | Max parallel agent containers |
 | `CONTAINER_TIMEOUT_MS` | `600000` | Container timeout (10 min) |
+| `TTS_API_URL` | _(empty)_ | Custom TTS endpoint URL (leave empty for Google Translate TTS) |
+| `TTS_API_KEY` | _(empty)_ | Bearer token for custom TTS provider |
 
 ## Agent Groups
 
@@ -180,6 +183,70 @@ curl -X POST http://localhost:3000/api/agent-groups \
 curl -X POST http://localhost:3000/api/agent-groups/GROUP_ID/assign/CHANNEL_ID \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
+
+## Agent Personas & Voice
+
+Each agent group can have a **persona** -- a personality configuration that goes beyond the system prompt. Personas control response style, emoji usage, language behavior, and optional text-to-speech voice messages.
+
+### Persona Settings
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `personality` | string | `""` | Freeform personality description (e.g. "Friendly Viennese food expert who loves local cuisine") |
+| `responseStyle` | string | `""` | Tone hint (e.g. "formal", "casual", "wienerisch", "poetic") |
+| `emojiUsage` | string | `"none"` | Emoji level: `none`, `minimal`, `moderate`, `heavy` |
+| `language` | string | `"auto"` | Language: `auto` (detect from user message), `de`, `en`, or any ISO code |
+| `voiceEnabled` | boolean | `false` | Send TTS voice messages alongside text on supported channels (Telegram) |
+| `voiceSpeed` | number | `1.0` | TTS speech speed multiplier (0.5 -- 2.0) |
+
+### Language Auto-Detection
+
+When `language` is set to `"auto"`, the system analyzes each incoming message for German or English patterns (common words, umlauts, grammar markers) and instructs the agent to reply in the detected language. This means a single bot can seamlessly switch between German and English based on who is writing.
+
+### Voice Messages (TTS)
+
+When `voiceEnabled` is `true`, the agent sends both a text message and a voice message for every response. Voice messages are generated via TTS and delivered as Telegram voice notes.
+
+**TTS Providers:**
+- **Default**: Google Translate TTS (free, no config needed, limited to short messages)
+- **Custom**: Set `TTS_API_URL` and optionally `TTS_API_KEY` to use any TTS provider (OpenAI, Azure, ElevenLabs, etc.). The endpoint receives `POST { text, language, speed }` and returns audio.
+
+### Example: Viennese Food Bot
+
+```bash
+curl -X POST http://localhost:3000/api/agent-groups \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "name": "gastro-bot-wien",
+    "systemPrompt": "Du bist ein Experte fuer die Wiener Gastronomie-Szene. Du hilfst Gastronomen mit Tipps zu Lieferanten, Trends und Rezepten.",
+    "model": "claude-sonnet-4-20250514",
+    "persona": {
+      "personality": "A warm, knowledgeable Viennese food industry insider who sprinkles in local dialect",
+      "responseStyle": "wienerisch",
+      "emojiUsage": "moderate",
+      "language": "de",
+      "voiceEnabled": true,
+      "voiceSpeed": 1.0
+    }
+  }'
+```
+
+### Update Persona on Existing Group
+
+```bash
+curl -X PUT http://localhost:3000/api/agent-groups/GROUP_ID \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "persona": {
+      "emojiUsage": "heavy",
+      "voiceEnabled": false
+    }
+  }'
+```
+
+Partial updates are merged with existing persona settings -- you only need to send the fields you want to change.
 
 ## Human-in-the-Loop (HITL)
 
@@ -446,7 +513,8 @@ All endpoints require authentication (session token) unless the system is in set
 │   │   │   ├── manager.ts          # CRUD, channel binding, budgets
 │   │   │   ├── encryption.ts       # API key encryption
 │   │   │   ├── resolver.ts         # Group resolution for channels
-│   │   │   └── types.ts            # Group type definitions
+│   │   │   ├── persona.ts          # Persona engine: language detection, prompt builder, TTS
+│   │   │   └── types.ts            # Group + persona type definitions
 │   │   ├── hitl/                   # Human-in-the-Loop approvals
 │   │   │   ├── db.ts               # Approval persistence + rules
 │   │   │   ├── manager.ts          # Approval workflow engine

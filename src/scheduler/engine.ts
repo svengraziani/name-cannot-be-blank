@@ -203,7 +203,7 @@ export async function executeJob(jobId: string): Promise<void> {
     }
 
     // Run the agent
-    const result = await processMessage(
+    const agentResult = await processMessage(
       conversationId,
       prompt,
       'scheduler',
@@ -211,6 +211,7 @@ export async function executeJob(jobId: string): Promise<void> {
       agentConfig.enabledSkills,
       agentConfig,
     );
+    const result = agentResult.content;
 
     // Route output
     await routeOutput(job.output, result, job.name);
