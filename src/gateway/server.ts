@@ -4,6 +4,7 @@ import path from 'path';
 import { createApiRouter } from './api';
 import { channelManagerEvents, getChannelAdapter } from '../channels/manager';
 import { MattermostAdapter } from '../channels/mattermost';
+import { WebhookAdapter } from '../channels/webhook';
 import { agentEvents } from '../agent/loop';
 import { containerEvents } from '../agent/container-runner';
 import { loopEvents } from '../agent/loop-mode';
@@ -28,6 +29,16 @@ export function createServer() {
       return;
     }
     adapter.handleSlashCommand(req, res);
+  });
+
+  // Generic webhook inbound (outside auth - verified via channel secret)
+  app.post('/webhook/incoming/:channelId', (req, res) => {
+    const adapter = getChannelAdapter(req.params.channelId);
+    if (!adapter || !(adapter instanceof WebhookAdapter)) {
+      res.status(404).json({ error: 'Webhook channel not found' });
+      return;
+    }
+    adapter.handleIncomingWebhook(req, res);
   });
 
   // Rate limiting on API endpoints
