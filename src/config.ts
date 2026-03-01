@@ -26,6 +26,11 @@ export const config = {
     token: process.env.GITHUB_TOKEN || '',
   },
 
+  timeAwareness: {
+    enabled: process.env.TIME_AWARENESS_ENABLED !== 'false', // enabled by default
+    timezone: process.env.TIME_AWARENESS_TIMEZONE || 'Europe/Vienna',
+  },
+
   email: {
     imapHost: process.env.EMAIL_IMAP_HOST || '',
     imapPort: parseInt(process.env.EMAIL_IMAP_PORT || '993', 10),
