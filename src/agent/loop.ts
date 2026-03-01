@@ -9,6 +9,7 @@ import { ResolvedAgentConfig } from './groups/resolver';
 import { setA2AContext } from './a2a';
 import { checkApprovalRequired, requestApproval } from './hitl';
 import { setGitContext } from './tools/git-repo';
+import { injectChannelContext } from '../channels/context';
 
 export const agentEvents = new EventEmitter();
 
@@ -113,7 +114,10 @@ export async function processMessage(
     // Determine effective settings (group config or global defaults)
     const effectiveModel = agentConfig?.model || config.agentModel;
     const effectiveMaxTokens = agentConfig?.maxTokens || config.agentMaxTokens;
-    const effectiveSystemPrompt = agentConfig?.systemPrompt || systemPrompt;
+    const effectiveSystemPrompt = injectChannelContext(
+      agentConfig?.systemPrompt || systemPrompt,
+      channelType,
+    );
     const effectiveApiKey = agentConfig?.apiKey || config.anthropicApiKey;
     const effectiveTools = agentConfig?.enabledSkills || enabledTools;
     const useContainer = agentConfig?.containerMode ?? isContainerMode();
