@@ -83,8 +83,16 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     return;
   }
 
-  // Skip auth for login/setup endpoints
-  if (req.path === '/auth/login' || req.path === '/auth/setup' || req.path === '/auth/status') {
+  // Skip auth for login/setup, health, and docs endpoints
+  if (
+    req.path === '/auth/login' ||
+    req.path === '/auth/setup' ||
+    req.path === '/auth/status' ||
+    req.path === '/health' ||
+    req.path.startsWith('/health/') ||
+    req.path === '/docs' ||
+    req.path.startsWith('/docs/')
+  ) {
     next();
     return;
   }

@@ -59,6 +59,18 @@ export class MattermostAdapter extends ChannelAdapter {
     }
   }
 
+  override getHealthInfo() {
+    return {
+      status: this.status,
+      connected: this.status === 'connected',
+      error: this.lastError,
+      details: {
+        webhookBased: true,
+        webhookConfigured: !!this.conf.webhookUrl,
+      },
+    };
+  }
+
   /**
    * Handle an incoming Mattermost slash command request.
    * Called by the webhook route in server.ts.
