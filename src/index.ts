@@ -9,6 +9,7 @@ import { initA2ASchema } from './agent/a2a';
 import { initSchedulerSchema, startScheduler, startCalendarPolling } from './scheduler';
 import { initHitlSchema, expireStaleApprovals } from './agent/hitl';
 import { cleanupStaleWorkspaces } from './agent/tools/git-repo';
+import { initMcpSchema, initMcpServers, startHealthCheck, shutdownAllMcpServers } from './agent/mcp';
 
 async function main() {
   console.log('='.repeat(50));
@@ -48,6 +49,9 @@ async function main() {
   // Initialize HITL approval schema
   initHitlSchema();
 
+  // Initialize MCP server schema
+  initMcpSchema();
+
   // Create HTTP/WS server
   const app = createServer();
 
@@ -62,6 +66,12 @@ async function main() {
 
   // Start skills hot-reload watcher
   startSkillWatcher();
+
+  // Restore previously running MCP servers
+  await initMcpServers();
+
+  // Start MCP health check (monitors running containers every 60s)
+  startHealthCheck();
 
   // Periodic cleanup of stale approval requests (every 60s)
   setInterval(() => {
@@ -89,4 +99,14 @@ async function main() {
 main().catch((err) => {
   console.error('[FATAL]', err);
   process.exit(1);
+});
+
+// Graceful shutdown — stop MCP containers
+process.on('SIGINT', () => {
+  console.log('\n[shutdown] Stopping MCP servers...');
+  void shutdownAllMcpServers().then(() => process.exit(0));
+});
+process.on('SIGTERM', () => {
+  console.log('[shutdown] Stopping MCP servers...');
+  void shutdownAllMcpServers().then(() => process.exit(0));
 });
