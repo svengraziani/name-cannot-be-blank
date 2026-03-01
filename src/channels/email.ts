@@ -168,4 +168,22 @@ export class EmailAdapter extends ChannelAdapter {
       smtpHost: this.conf.smtpHost,
     };
   }
+
+  override getHealthInfo() {
+    const imapState = this.imap?.state as string | undefined;
+    return {
+      status: this.status,
+      connected: this.status === 'connected',
+      error: this.lastError,
+      details: {
+        imapAlive: imapState === 'authenticated',
+        imapState: imapState || 'disconnected',
+        smtpConfigured: !!this.transporter,
+        imapHost: this.conf.imapHost,
+        smtpHost: this.conf.smtpHost,
+        pollingActive: !!this.pollTimer,
+        pollIntervalMs: this.conf.pollIntervalMs,
+      },
+    };
+  }
 }

@@ -20,6 +20,8 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 - **Built-in Agent Tools** -- Web browsing (Playwright), HTTP requests, script execution, and A2A tools (delegate, broadcast, query)
 - **Scheduler** -- Cron-based job scheduling with iCal calendar integration and output routing to channels or webhooks
 - **Usage Analytics** -- Per-call token tracking, cost estimation, daily/model breakdowns
+- **Per-Channel Health Checks** -- Individual health endpoints for each channel (Telegram connected? WhatsApp QR needed? IMAP alive?) plus a global overview
+- **OpenAPI/Swagger Docs** -- Auto-generated API documentation at `/api/docs` with interactive Swagger UI
 - **Auth & Rate Limiting** -- Session-based login, admin setup flow, IP-based rate limiting
 - **Real-time Dashboard** -- WebSocket-powered live activity feed, channel management, task monitoring
 - **SQLite Persistence** -- All data (messages, runs, usage, sessions, approvals, schedules) in a single portable database
@@ -399,12 +401,46 @@ All endpoints require authentication (session token) unless the system is in set
 | GET | `/api/tasks/:id/output` | Get task output |
 | DELETE | `/api/tasks/:id` | Delete a task |
 
+### Health Checks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/health` | Global health check with channel summary (public, no auth) |
+| GET | `/api/health/channels` | Per-channel health details |
+| GET | `/api/health/channels/:id` | Health status for a specific channel |
+
+Each channel type returns specific health details:
+
+- **Telegram** -- `botConnected`, `pollingActive`
+- **WhatsApp** -- `qrCodeRequired`, `qrDataUrl`, `reconnectAttempts`
+- **Email** -- `imapAlive`, `imapState`, `smtpConfigured`, `pollingActive`
+- **Mattermost** -- `webhookBased`, `webhookConfigured`
+
+```bash
+# Check global health (no auth required)
+curl http://localhost:3000/api/health
+
+# Check all channel health
+curl http://localhost:3000/api/health/channels \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Check specific channel health
+curl http://localhost:3000/api/health/channels/CHANNEL_ID \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### API Documentation
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/docs` | Interactive Swagger UI (public, no auth) |
+| GET | `/api/docs/openapi.json` | OpenAPI 3.0 specification (JSON) |
+
 ### Other
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/runs` | Recent agent runs |
-| GET | `/api/health` | Health check + uptime |
 
 ## Adding Channels
 
