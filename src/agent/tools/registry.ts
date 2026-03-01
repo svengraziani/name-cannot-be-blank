@@ -21,6 +21,18 @@ class ToolRegistry {
     return this.tools.get(name);
   }
 
+  unregister(name: string): boolean {
+    const deleted = this.tools.delete(name);
+    if (deleted) {
+      console.log(`[tools] Unregistered tool: ${name}`);
+    }
+    return deleted;
+  }
+
+  getByPrefix(prefix: string): AgentTool[] {
+    return Array.from(this.tools.values()).filter((t) => t.name.startsWith(prefix));
+  }
+
   /**
    * Get Anthropic-compatible tool definitions, optionally filtered to a set of enabled tool names.
    */

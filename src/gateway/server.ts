@@ -12,6 +12,7 @@ import { a2aEvents } from '../agent/a2a';
 import { schedulerEvents, calendarEvents } from '../scheduler';
 import { skillWatcherEvents } from '../agent/skills';
 import { approvalEvents, notifyApprovalRequired, notifyApprovalResolved } from '../agent/hitl';
+import { mcpEvents } from '../agent/mcp';
 
 export function createServer() {
   const app = express();
@@ -122,6 +123,14 @@ export function createServer() {
     void notifyApprovalResolved(data);
   });
   approvalEvents.on('approval:timeout', (data) => broadcast('approval:timeout', data));
+
+  // Forward MCP server events
+  mcpEvents.on('mcp:server:starting', (data) => broadcast('mcp:server:starting', data));
+  mcpEvents.on('mcp:server:started', (data) => broadcast('mcp:server:started', data));
+  mcpEvents.on('mcp:server:stopped', (data) => broadcast('mcp:server:stopped', data));
+  mcpEvents.on('mcp:server:error', (data) => broadcast('mcp:server:error', data));
+  mcpEvents.on('mcp:tools:discovered', (data) => broadcast('mcp:tools:discovered', data));
+  mcpEvents.on('mcp:image:pulling', (data) => broadcast('mcp:image:pulling', data));
 
   // Fallback: serve UI for any non-API route
   app.get('*', (_req, res) => {

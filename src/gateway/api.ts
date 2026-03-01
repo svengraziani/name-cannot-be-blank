@@ -46,6 +46,23 @@ import {
   DEFAULT_TOOL_RISK,
 } from '../agent/hitl';
 import {
+  getCatalog,
+  getCatalogEntry,
+  createMcpServer,
+  getMcpServer,
+  getAllMcpServers,
+  updateMcpServer,
+  deleteMcpServer,
+  startMcpServer,
+  stopMcpServer,
+  restartMcpServer,
+  getMcpServerTools,
+  getMcpServerLogs,
+  assignMcpServerToGroup,
+  unassignMcpServerFromGroup,
+  getMcpServerGroupIds,
+} from '../agent/mcp';
+import {
   createJob,
   getAllJobs,
   getJob,
@@ -844,6 +861,215 @@ export function createApiRouter(): Router {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== MCP Servers ====================
+
+  router.get('/mcp-catalog', (_req: Request, res: Response) => {
+    res.json(getCatalog());
+  });
+
+  router.get('/mcp-servers', (_req: Request, res: Response) => {
+    try {
+      const servers = getAllMcpServers();
+      // Strip env vars (contain secrets) — return hasEnv flag instead
+      const safe = servers.map((s) => ({
+        ...s,
+        env: undefined,
+        hasEnv: Object.keys(s.env).length > 0,
+        envKeys: Object.keys(s.env),
+        assignedGroups: getMcpServerGroupIds(s.id),
+      }));
+      res.json(safe);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/mcp-servers', (req: Request, res: Response) => {
+    try {
+      const { name, description, image, transport, port, command, args, env, volumes, catalogId } = req.body;
+      if (!name || !image) {
+        res.status(400).json({ error: 'name and image are required' });
+        return;
+      }
+      const server = createMcpServer({
+        name,
+        description,
+        image,
+        transport,
+        port,
+        command,
+        args,
+        env,
+        volumes,
+        catalogId,
+      });
+      res.json(server);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/mcp-servers/from-catalog', (req: Request, res: Response) => {
+    try {
+      const { catalogId, name, env, volumes } = req.body;
+      if (!catalogId) {
+        res.status(400).json({ error: 'catalogId is required' });
+        return;
+      }
+      const entry = getCatalogEntry(catalogId);
+      if (!entry) {
+        res.status(404).json({ error: `Catalog entry ${catalogId} not found` });
+        return;
+      }
+
+      const server = createMcpServer({
+        name: name || entry.name,
+        description: entry.description,
+        image: entry.image,
+        transport: entry.transport,
+        port: entry.defaultPort,
+        command: entry.command,
+        args: entry.args,
+        env: env || {},
+        volumes: volumes || entry.defaultVolumes || [],
+        catalogId: entry.id,
+      });
+      res.json(server);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/mcp-servers/:id', (req: Request, res: Response) => {
+    try {
+      const server = getMcpServer(req.params.id as string);
+      if (!server) {
+        res.status(404).json({ error: 'MCP server not found' });
+        return;
+      }
+      res.json({
+        ...server,
+        env: undefined,
+        hasEnv: Object.keys(server.env).length > 0,
+        envKeys: Object.keys(server.env),
+        assignedGroups: getMcpServerGroupIds(server.id),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.put('/mcp-servers/:id', (req: Request, res: Response) => {
+    try {
+      const server = updateMcpServer(req.params.id as string, req.body);
+      res.json({
+        ...server,
+        env: undefined,
+        hasEnv: Object.keys(server.env).length > 0,
+        envKeys: Object.keys(server.env),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  });
+
+  router.delete('/mcp-servers/:id', async (req: Request, res: Response) => {
+    try {
+      const server = getMcpServer(req.params.id as string);
+      if (!server) {
+        res.status(404).json({ error: 'MCP server not found' });
+        return;
+      }
+      // Stop if running
+      if (server.status === 'running' || server.status === 'starting') {
+        await stopMcpServer(server.id);
+      }
+      deleteMcpServer(server.id);
+      res.json({ status: 'deleted' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/mcp-servers/:id/start', async (req: Request, res: Response) => {
+    try {
+      await startMcpServer(req.params.id as string);
+      const server = getMcpServer(req.params.id as string);
+      res.json({ status: 'started', toolCount: server?.toolsCache?.length || 0 });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/mcp-servers/:id/stop', async (req: Request, res: Response) => {
+    try {
+      await stopMcpServer(req.params.id as string);
+      res.json({ status: 'stopped' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/mcp-servers/:id/restart', async (req: Request, res: Response) => {
+    try {
+      await restartMcpServer(req.params.id as string);
+      const server = getMcpServer(req.params.id as string);
+      res.json({ status: 'restarted', toolCount: server?.toolsCache?.length || 0 });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/mcp-servers/:id/tools', (req: Request, res: Response) => {
+    try {
+      const tools = getMcpServerTools(req.params.id as string);
+      res.json(tools);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/mcp-servers/:id/logs', async (req: Request, res: Response) => {
+    try {
+      const lines = parseInt(req.query.lines as string) || 100;
+      const logs = await getMcpServerLogs(req.params.id as string, lines);
+      res.json({ logs });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/mcp-servers/:id/assign/:groupId', (req: Request, res: Response) => {
+    try {
+      assignMcpServerToGroup(req.params.id as string, req.params.groupId as string);
+      res.json({ status: 'assigned' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  });
+
+  router.post('/mcp-servers/:id/unassign/:groupId', (req: Request, res: Response) => {
+    try {
+      unassignMcpServerFromGroup(req.params.id as string, req.params.groupId as string);
+      res.json({ status: 'unassigned' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
     }
   });
 

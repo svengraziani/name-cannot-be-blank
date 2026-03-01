@@ -170,6 +170,7 @@
       <div class="tab active" onclick="switchTab('dashboard')">Dashboard</div>
       <div class="tab" onclick="switchTab('groups')">Agent Groups</div>
       <div class="tab" onclick="switchTab('skills')">Skills</div>
+      <div class="tab" onclick="switchTab('mcp')">MCP Servers</div>
       <div class="tab" onclick="switchTab('scheduler')">Scheduler</div>
       <div class="tab" onclick="switchTab('approvals')">Approvals</div>
       <div class="tab" onclick="switchTab('usage')">Usage</div>
@@ -282,6 +283,31 @@
           </div>
           <p style="color:var(--text2);font-size:13px;margin-bottom:16px;">Skills are tool plugins the agent can use. Built-in skills are always available, custom skills can be toggled.</p>
           <div id="skillList"><div class="empty-state"><p>Loading skills...</p></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== MCP SERVERS TAB ===== -->
+    <div class="tab-content" id="tab-mcp">
+      <div class="container">
+        <div class="card full" style="margin-bottom:20px;">
+          <h2>MCP Server Stats</h2>
+          <div class="stats">
+            <div class="stat"><div class="value" id="mcpActiveServers">0</div><div class="label">Running Servers</div></div>
+            <div class="stat"><div class="value" id="mcpTotalTools">0</div><div class="label">Available Tools</div></div>
+            <div class="stat"><div class="value" id="mcpTotalServers">0</div><div class="label">Configured</div></div>
+          </div>
+        </div>
+        <div class="card full">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h2 style="margin:0;">MCP Servers</h2>
+            <div style="display:flex;gap:8px;">
+              <button class="btn primary sm" onclick="openMcpCatalog()">+ From Catalog</button>
+              <button class="btn sm" onclick="openMcpCustom()">+ Custom</button>
+            </div>
+          </div>
+          <p style="color:var(--text2);font-size:13px;margin-bottom:16px;">Docker-based MCP tool servers. Each server provides tools that agents can use via the Model Context Protocol.</p>
+          <div id="mcpServerList"><div class="empty-state"><p>No MCP servers configured.</p><p><button class="btn primary" onclick="openMcpCatalog()">Browse Catalog</button></p></div></div>
         </div>
       </div>
     </div>
@@ -491,6 +517,80 @@
     </div>
   </div>
 
+  <!-- MCP Catalog Modal -->
+  <div class="modal-overlay hidden" id="mcpCatalogModal">
+    <div class="modal" style="max-width:700px;">
+      <h3>Add MCP Server from Catalog</h3>
+      <p style="color:var(--text2);font-size:13px;margin-bottom:16px;">Choose a pre-built MCP server. Each provides a set of tools for your agents.</p>
+      <div id="mcpCatalogGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:16px;"></div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal('mcpCatalogModal')">Cancel</button></div>
+    </div>
+  </div>
+
+  <!-- MCP Configure Modal (after selecting from catalog) -->
+  <div class="modal-overlay hidden" id="mcpConfigModal">
+    <div class="modal" style="max-width:560px;">
+      <h3 id="mcpConfigTitle">Configure MCP Server</h3>
+      <input type="hidden" id="mcpConfigCatalogId" />
+      <div class="form-group"><label>Name</label><input id="mcpConfigName" placeholder="Server name" /></div>
+      <div id="mcpConfigEnvFields"></div>
+      <div class="form-group" id="mcpConfigVolumesGroup" style="display:none;">
+        <label>Volumes (one per line, host:container)</label>
+        <textarea id="mcpConfigVolumes" style="min-height:60px;font-family:monospace;font-size:12px;"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('mcpConfigModal')">Cancel</button>
+        <button class="btn primary" onclick="submitMcpFromCatalog()">Create &amp; Start</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MCP Custom Server Modal -->
+  <div class="modal-overlay hidden" id="mcpCustomModal">
+    <div class="modal" style="max-width:560px;">
+      <h3 id="mcpCustomTitle">Custom MCP Server</h3>
+      <input type="hidden" id="mcpCustomEditId" />
+      <div class="form-group"><label>Name</label><input id="mcpCustomName" placeholder="e.g. My Database" /></div>
+      <div class="form-group"><label>Docker Image</label><input id="mcpCustomImage" placeholder="e.g. mcp/postgres" /></div>
+      <div class="form-group"><label>Transport</label><select id="mcpCustomTransport" onchange="mcpTransportChanged()"><option value="stdio">stdio</option><option value="sse">SSE (HTTP)</option></select></div>
+      <div class="form-group" id="mcpCustomPortGroup" style="display:none;"><label>Container Port</label><input id="mcpCustomPort" type="number" placeholder="3001" /></div>
+      <div class="form-group"><label>Command Override (optional)</label><input id="mcpCustomCommand" placeholder="Leave blank for default" /></div>
+      <div class="form-group"><label>Args (one per line)</label><textarea id="mcpCustomArgs" style="min-height:40px;font-family:monospace;font-size:12px;" placeholder="--flag value"></textarea></div>
+      <div class="form-group">
+        <label>Environment Variables</label>
+        <div id="mcpCustomEnvList"></div>
+        <button class="btn sm" onclick="mcpAddEnvRow()" style="margin-top:6px;">+ Add Variable</button>
+      </div>
+      <div class="form-group"><label>Volumes (one per line, host:container)</label><textarea id="mcpCustomVolumes" style="min-height:40px;font-family:monospace;font-size:12px;" placeholder="/host/path:/container/path"></textarea></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('mcpCustomModal')">Cancel</button>
+        <button class="btn primary" onclick="submitMcpCustom()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MCP Tools Viewer Modal -->
+  <div class="modal-overlay hidden" id="mcpToolsModal">
+    <div class="modal" style="max-width:600px;">
+      <h3 id="mcpToolsTitle">Server Tools</h3>
+      <div id="mcpToolsList" style="max-height:400px;overflow-y:auto;"></div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal('mcpToolsModal')">Close</button></div>
+    </div>
+  </div>
+
+  <!-- MCP Group Assignment Modal -->
+  <div class="modal-overlay hidden" id="mcpAssignModal">
+    <div class="modal">
+      <h3>Assign to Agent Groups</h3>
+      <input type="hidden" id="mcpAssignServerId" />
+      <p style="color:var(--text2);font-size:13px;margin-bottom:12px;">Select which agent groups can use this MCP server's tools.</p>
+      <div id="mcpAssignGroupList" style="max-height:300px;overflow-y:auto;"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('mcpAssignModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // === Auth State ===
     let authToken = localStorage.getItem('gateway_token') || '';
@@ -609,6 +709,7 @@
       if (name === 'tasks') refreshTasks();
       if (name === 'groups') refreshGroups();
       if (name === 'skills') refreshSkills();
+      if (name === 'mcp') refreshMcpServers();
       if (name === 'scheduler') refreshScheduler();
       if (name === 'approvals') refreshApprovals();
     }
@@ -663,6 +764,12 @@
           refreshPendingApprovals();
           refreshApprovalStats();
           break;
+        case 'mcp:server:starting': addLog('status', `MCP: Starting ${data.name}...`); break;
+        case 'mcp:server:started': addLog('status', `MCP: ${data.name} started (${data.toolCount} tools)`); refreshMcpServers(); break;
+        case 'mcp:server:stopped': addLog('status', `MCP: ${data.name} stopped`); refreshMcpServers(); break;
+        case 'mcp:server:error': addLog('error', `MCP: ${data.name} error: ${data.error}`); refreshMcpServers(); break;
+        case 'mcp:tools:discovered': addLog('status', `MCP: ${data.count} tools discovered from ${data.serverName}`); break;
+        case 'mcp:image:pulling': addLog('status', `MCP: Pulling image ${data.image}...`); break;
       }
     }
 
@@ -1342,6 +1449,321 @@
 
     function statusColor(status) {
       return { pending: 'var(--yellow)', approved: 'var(--green)', rejected: 'var(--red)', timeout: 'var(--orange)', auto_approved: 'var(--blue)' }[status] || 'var(--text2)';
+    }
+
+    // === MCP Servers Tab ===
+    let mcpServers = [];
+    let mcpCatalog = [];
+
+    async function refreshMcpServers() {
+      try {
+        const [serversRes, catalogRes] = await Promise.all([
+          apiFetch('/api/mcp-servers'),
+          apiFetch('/api/mcp-catalog'),
+        ]);
+        mcpServers = await serversRes.json();
+        mcpCatalog = await catalogRes.json();
+        renderMcpServers();
+        updateMcpStats();
+      } catch {}
+    }
+
+    function updateMcpStats() {
+      const running = mcpServers.filter(s => s.status === 'running');
+      const totalTools = running.reduce((sum, s) => sum + (s.toolsCache?.length || 0), 0);
+      document.getElementById('mcpActiveServers').textContent = running.length;
+      document.getElementById('mcpTotalTools').textContent = totalTools;
+      document.getElementById('mcpTotalServers').textContent = mcpServers.length;
+    }
+
+    const mcpIcons = { database: '&#128451;', folder: '&#128193;', 'git-branch': '&#128196;', 'message-square': '&#128172;', search: '&#128269;', 'map-pin': '&#128205;', globe: '&#127760;', brain: '&#129504;' };
+
+    function renderMcpServers() {
+      const el = document.getElementById('mcpServerList');
+      if (!mcpServers.length) {
+        el.innerHTML = '<div class="empty-state"><p>No MCP servers configured.</p><p><button class="btn primary" onclick="openMcpCatalog()">Browse Catalog</button></p></div>';
+        return;
+      }
+      el.innerHTML = mcpServers.map(s => {
+        const statusClass = { running: 'completed', stopped: 'pending', starting: 'running', error: 'error' }[s.status] || 'pending';
+        const toolCount = s.toolsCache?.length || 0;
+        const catalogEntry = mcpCatalog.find(c => c.id === s.catalogId);
+        const icon = catalogEntry ? (mcpIcons[catalogEntry.icon] || '&#9881;') : '&#9881;';
+        return `
+          <div class="task-item">
+            <div class="task-header">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:20px;">${icon}</span>
+                <div>
+                  <span class="task-name">${escHtml(s.name)}</span>
+                  <span class="task-badge ${statusClass}">${s.status}</span>
+                  ${toolCount > 0 ? `<span style="font-size:11px;color:var(--text2);margin-left:8px;">${toolCount} tools</span>` : ''}
+                </div>
+              </div>
+              <div style="display:flex;gap:6px;">
+                ${s.status === 'running' ? `<button class="btn sm" onclick="mcpStop('${s.id}')">Stop</button>` : ''}
+                ${s.status === 'stopped' || s.status === 'error' ? `<button class="btn sm primary" onclick="mcpStart('${s.id}')">Start</button>` : ''}
+                ${s.status === 'running' ? `<button class="btn sm" onclick="mcpRestart('${s.id}')">Restart</button>` : ''}
+                ${s.status === 'running' ? `<button class="btn sm" onclick="mcpViewTools('${s.id}')">Tools</button>` : ''}
+                <button class="btn sm" onclick="mcpAssignGroups('${s.id}')">Groups</button>
+                <button class="btn sm" onclick="mcpEdit('${s.id}')">Edit</button>
+                <button class="btn sm danger" onclick="mcpDelete('${s.id}')">Delete</button>
+              </div>
+            </div>
+            <div class="task-meta">
+              ${escHtml(s.image)} | ${s.transport}
+              ${s.description ? ' | ' + escHtml(s.description) : ''}
+              ${s.error ? `<br><span style="color:var(--red);">Error: ${escHtml(s.error)}</span>` : ''}
+              ${s.assignedGroups?.length ? `<br>Groups: ${s.assignedGroups.length} assigned` : ''}
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    // --- Catalog Modal ---
+    function openMcpCatalog() {
+      refreshMcpServers();
+      const grid = document.getElementById('mcpCatalogGrid');
+      grid.innerHTML = mcpCatalog.map(entry => {
+        const icon = mcpIcons[entry.icon] || '&#9881;';
+        return `
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:16px;cursor:pointer;transition:border-color 0.2s;"
+               onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
+               onclick="openMcpCatalogConfig('${entry.id}')">
+            <div style="font-size:28px;margin-bottom:8px;">${icon}</div>
+            <div style="font-weight:600;font-size:14px;margin-bottom:4px;">${escHtml(entry.name)}</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.4;">${escHtml(entry.description)}</div>
+          </div>`;
+      }).join('');
+      document.getElementById('mcpCatalogModal').classList.remove('hidden');
+    }
+
+    function openMcpCatalogConfig(catalogId) {
+      const entry = mcpCatalog.find(c => c.id === catalogId);
+      if (!entry) return;
+      closeModal('mcpCatalogModal');
+
+      document.getElementById('mcpConfigCatalogId').value = catalogId;
+      document.getElementById('mcpConfigName').value = entry.name;
+      document.getElementById('mcpConfigTitle').textContent = `Configure ${entry.name}`;
+
+      // Build env fields from schema
+      const envDiv = document.getElementById('mcpConfigEnvFields');
+      envDiv.innerHTML = entry.envSchema.map(e => `
+        <div class="form-group">
+          <label>${escHtml(e.label)}${e.required ? ' *' : ''}${e.description ? ` <span style="font-size:11px;color:var(--text2);">(${escHtml(e.description)})</span>` : ''}</label>
+          <input id="mcpEnv_${e.key}" type="${e.secret ? 'password' : 'text'}" value="${escHtml(e.default || '')}" placeholder="${escHtml(e.key)}" />
+        </div>
+      `).join('');
+
+      // Volumes
+      const volGroup = document.getElementById('mcpConfigVolumesGroup');
+      if (entry.defaultVolumes?.length) {
+        volGroup.style.display = 'block';
+        document.getElementById('mcpConfigVolumes').value = entry.defaultVolumes.join('\n');
+      } else {
+        volGroup.style.display = 'none';
+        document.getElementById('mcpConfigVolumes').value = '';
+      }
+
+      document.getElementById('mcpConfigModal').classList.remove('hidden');
+    }
+
+    async function submitMcpFromCatalog() {
+      const catalogId = document.getElementById('mcpConfigCatalogId').value;
+      const name = document.getElementById('mcpConfigName').value;
+      const entry = mcpCatalog.find(c => c.id === catalogId);
+      if (!entry || !name) { alert('Name is required'); return; }
+
+      // Collect env vars
+      const env = {};
+      for (const e of entry.envSchema) {
+        const val = document.getElementById(`mcpEnv_${e.key}`)?.value || '';
+        if (e.required && !val) { alert(`${e.label} is required`); return; }
+        if (val) env[e.key] = val;
+      }
+
+      // Collect volumes
+      const volText = document.getElementById('mcpConfigVolumes').value.trim();
+      const volumes = volText ? volText.split('\n').filter(v => v.trim()) : [];
+
+      try {
+        const res = await apiFetch('/api/mcp-servers/from-catalog', {
+          method: 'POST',
+          body: JSON.stringify({ catalogId, name, env, volumes }),
+        });
+        const server = await res.json();
+        if (server.error) { alert(server.error); return; }
+        closeModal('mcpConfigModal');
+
+        // Auto-start
+        addLog('status', `MCP: Creating ${name}...`);
+        await apiFetch(`/api/mcp-servers/${server.id}/start`, { method: 'POST' });
+        refreshMcpServers();
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    // --- Custom Server Modal ---
+    function openMcpCustom(editId) {
+      const server = editId ? mcpServers.find(s => s.id === editId) : null;
+      document.getElementById('mcpCustomEditId').value = editId || '';
+      document.getElementById('mcpCustomTitle').textContent = server ? `Edit ${server.name}` : 'Custom MCP Server';
+      document.getElementById('mcpCustomName').value = server?.name || '';
+      document.getElementById('mcpCustomImage').value = server?.image || '';
+      document.getElementById('mcpCustomTransport').value = server?.transport || 'stdio';
+      document.getElementById('mcpCustomPort').value = server?.port || '';
+      document.getElementById('mcpCustomCommand').value = server?.command || '';
+      document.getElementById('mcpCustomArgs').value = server?.args?.join('\n') || '';
+      document.getElementById('mcpCustomVolumes').value = server?.volumes?.join('\n') || '';
+      mcpTransportChanged();
+
+      // Env vars
+      const envList = document.getElementById('mcpCustomEnvList');
+      envList.innerHTML = '';
+      if (server?.envKeys?.length) {
+        for (const key of server.envKeys) {
+          mcpAddEnvRow(key, '');
+        }
+      }
+
+      document.getElementById('mcpCustomModal').classList.remove('hidden');
+    }
+
+    function mcpTransportChanged() {
+      const t = document.getElementById('mcpCustomTransport').value;
+      document.getElementById('mcpCustomPortGroup').style.display = t === 'sse' ? 'block' : 'none';
+    }
+
+    function mcpAddEnvRow(key, value) {
+      const list = document.getElementById('mcpCustomEnvList');
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;';
+      row.innerHTML = `
+        <input class="mcpEnvKey" placeholder="KEY" value="${escHtml(key || '')}" style="flex:1;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:monospace;" />
+        <input class="mcpEnvVal" placeholder="value" value="${escHtml(value || '')}" style="flex:2;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;" />
+        <button class="btn sm danger" onclick="this.parentElement.remove()">x</button>
+      `;
+      list.appendChild(row);
+    }
+
+    async function submitMcpCustom() {
+      const editId = document.getElementById('mcpCustomEditId').value;
+      const name = document.getElementById('mcpCustomName').value;
+      const image = document.getElementById('mcpCustomImage').value;
+      if (!name || !image) { alert('Name and image are required'); return; }
+
+      const transport = document.getElementById('mcpCustomTransport').value;
+      const port = parseInt(document.getElementById('mcpCustomPort').value) || undefined;
+      const command = document.getElementById('mcpCustomCommand').value || undefined;
+      const argsText = document.getElementById('mcpCustomArgs').value.trim();
+      const args = argsText ? argsText.split('\n').filter(a => a.trim()) : [];
+      const volText = document.getElementById('mcpCustomVolumes').value.trim();
+      const volumes = volText ? volText.split('\n').filter(v => v.trim()) : [];
+
+      // Collect env vars
+      const env = {};
+      document.querySelectorAll('#mcpCustomEnvList > div').forEach(row => {
+        const key = row.querySelector('.mcpEnvKey').value.trim();
+        const val = row.querySelector('.mcpEnvVal').value;
+        if (key) env[key] = val;
+      });
+
+      try {
+        if (editId) {
+          await apiFetch(`/api/mcp-servers/${editId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ name, image, transport, port, command, args, env, volumes }),
+          });
+        } else {
+          await apiFetch('/api/mcp-servers', {
+            method: 'POST',
+            body: JSON.stringify({ name, image, transport, port, command, args, env, volumes }),
+          });
+        }
+        closeModal('mcpCustomModal');
+        refreshMcpServers();
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    function mcpEdit(id) { openMcpCustom(id); }
+
+    // --- Server actions ---
+    async function mcpStart(id) {
+      try {
+        await apiFetch(`/api/mcp-servers/${id}/start`, { method: 'POST' });
+        refreshMcpServers();
+      } catch (e) { alert('Start failed: ' + e.message); }
+    }
+
+    async function mcpStop(id) {
+      try {
+        await apiFetch(`/api/mcp-servers/${id}/stop`, { method: 'POST' });
+        refreshMcpServers();
+      } catch (e) { alert('Stop failed: ' + e.message); }
+    }
+
+    async function mcpRestart(id) {
+      try {
+        await apiFetch(`/api/mcp-servers/${id}/restart`, { method: 'POST' });
+        refreshMcpServers();
+      } catch (e) { alert('Restart failed: ' + e.message); }
+    }
+
+    async function mcpDelete(id) {
+      const server = mcpServers.find(s => s.id === id);
+      if (!confirm(`Delete MCP server "${server?.name || id}"? This will stop the container.`)) return;
+      try {
+        await apiFetch(`/api/mcp-servers/${id}`, { method: 'DELETE' });
+        refreshMcpServers();
+      } catch (e) { alert('Delete failed: ' + e.message); }
+    }
+
+    // --- Tools viewer ---
+    async function mcpViewTools(id) {
+      const server = mcpServers.find(s => s.id === id);
+      document.getElementById('mcpToolsTitle').textContent = `Tools: ${server?.name || 'Server'}`;
+      try {
+        const res = await apiFetch(`/api/mcp-servers/${id}/tools`);
+        const tools = await res.json();
+        document.getElementById('mcpToolsList').innerHTML = tools.length ? tools.map(t => `
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;">
+            <div style="font-weight:600;font-size:14px;color:var(--accent);margin-bottom:4px;">${escHtml(t.name)}</div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">${escHtml(t.description || 'No description')}</div>
+            <details style="font-size:11px;"><summary style="cursor:pointer;color:var(--text2);">Input Schema</summary><pre style="background:var(--bg);border-radius:4px;padding:8px;margin-top:4px;overflow-x:auto;font-size:11px;">${escHtml(JSON.stringify(t.inputSchema, null, 2))}</pre></details>
+          </div>
+        `).join('') : '<p style="color:var(--text2);text-align:center;padding:20px;">No tools discovered yet.</p>';
+        document.getElementById('mcpToolsModal').classList.remove('hidden');
+      } catch (e) { alert('Error loading tools: ' + e.message); }
+    }
+
+    // --- Group assignment ---
+    async function mcpAssignGroups(id) {
+      document.getElementById('mcpAssignServerId').value = id;
+      const server = mcpServers.find(s => s.id === id);
+      const assignedGroups = server?.assignedGroups || [];
+
+      try {
+        const res = await apiFetch('/api/agent-groups');
+        const groups = await res.json();
+        document.getElementById('mcpAssignGroupList').innerHTML = groups.length ? groups.map(g => `
+          <label style="display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid var(--border);cursor:pointer;font-size:14px;">
+            <input type="checkbox" class="mcpGroupCheck" data-group-id="${g.id}" ${assignedGroups.includes(g.id) ? 'checked' : ''} onchange="mcpToggleGroup('${id}','${g.id}',this.checked)" />
+            <div>
+              <div style="font-weight:500;">${escHtml(g.name)}</div>
+              <div style="font-size:11px;color:var(--text2);">${escHtml(g.description || 'No description')}</div>
+            </div>
+          </label>
+        `).join('') : '<p style="color:var(--text2);text-align:center;padding:20px;">No agent groups configured. Create one first.</p>';
+        document.getElementById('mcpAssignModal').classList.remove('hidden');
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function mcpToggleGroup(serverId, groupId, assign) {
+      try {
+        const action = assign ? 'assign' : 'unassign';
+        await apiFetch(`/api/mcp-servers/${serverId}/${action}/${groupId}`, { method: 'POST' });
+        refreshMcpServers();
+      } catch (e) { alert('Error: ' + e.message); }
     }
 
     // === Util ===
