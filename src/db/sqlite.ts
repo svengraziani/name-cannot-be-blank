@@ -9,8 +9,24 @@ export function getDb(): Database.Database {
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
     initSchema(db);
+    migrateSchema(db);
   }
   return db;
+}
+
+function migrateSchema(db: Database.Database) {
+  // Add branch_id to messages (nullable for backwards compat)
+  const msgCols = db.pragma('table_info(messages)') as Array<{ name: string }>;
+  if (!msgCols.some((c) => c.name === 'branch_id')) {
+    db.exec('ALTER TABLE messages ADD COLUMN branch_id TEXT');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_messages_branch ON messages(branch_id)');
+  }
+
+  // Add active_branch_id to conversations
+  const convCols = db.pragma('table_info(conversations)') as Array<{ name: string }>;
+  if (!convCols.some((c) => c.name === 'active_branch_id')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN active_branch_id TEXT');
+  }
 }
 
 function initSchema(db: Database.Database) {
@@ -61,9 +77,22 @@ function initSchema(db: Database.Database) {
       FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
     );
 
+    -- Conversation branches (git-style branching for conversations)
+    CREATE TABLE IF NOT EXISTS conversation_branches (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      parent_branch_id TEXT,
+      branch_point_message_id INTEGER,
+      name TEXT NOT NULL DEFAULT 'main',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_branch_id) REFERENCES conversation_branches(id) ON DELETE SET NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_conversations_channel ON conversations(channel_id);
     CREATE INDEX IF NOT EXISTS idx_agent_runs_conversation ON agent_runs(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_branches_conversation ON conversation_branches(conversation_id);
 
     -- API call logging for usage tracking (Feature 3)
     CREATE TABLE IF NOT EXISTS api_calls (
@@ -185,6 +214,16 @@ export function getOrCreateConversation(channelId: string, externalId: string, t
   getDb()
     .prepare('INSERT INTO conversations (id, channel_id, external_id, title) VALUES (?, ?, ?, ?)')
     .run(id, channelId, externalId, title || externalId);
+
+  // Create the default "main" branch for new conversations
+  const branchId = require('uuid').v4();
+  getDb()
+    .prepare('INSERT INTO conversation_branches (id, conversation_id, name) VALUES (?, ?, ?)')
+    .run(branchId, id, 'main');
+  getDb()
+    .prepare('UPDATE conversations SET active_branch_id = ? WHERE id = ?')
+    .run(branchId, id);
+
   return id;
 }
 
@@ -195,10 +234,86 @@ export function getConversation(conversationId: string): { id: string; channelId
 }
 
 export function getConversationMessages(conversationId: string, limit = 50): Array<{ role: string; content: string }> {
+  // Get active branch for this conversation
+  const conv = getDb()
+    .prepare('SELECT active_branch_id FROM conversations WHERE id = ?')
+    .get(conversationId) as { active_branch_id: string | null } | undefined;
+
+  if (conv?.active_branch_id) {
+    return getBranchMessages(conversationId, conv.active_branch_id, limit);
+  }
+
+  // Fallback for conversations without branches (legacy)
   return getDb()
     .prepare('SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?')
     .all(conversationId, limit)
     .reverse() as Array<{ role: string; content: string }>;
+}
+
+/**
+ * Get messages for a specific branch, following the chain up to root.
+ * Messages include: parent branch messages up to the branch point, then this branch's own messages.
+ */
+export function getBranchMessages(
+  conversationId: string,
+  branchId: string,
+  limit = 50,
+): Array<{ role: string; content: string }> {
+  // Build the branch chain from current branch to root
+  const branchChain: Array<{ id: string; parent_branch_id: string | null; branch_point_message_id: number | null }> = [];
+  let currentId: string | null = branchId;
+
+  while (currentId) {
+    const branch = getDb()
+      .prepare('SELECT id, parent_branch_id, branch_point_message_id FROM conversation_branches WHERE id = ?')
+      .get(currentId) as { id: string; parent_branch_id: string | null; branch_point_message_id: number | null } | undefined;
+    if (!branch) break;
+    branchChain.unshift(branch); // prepend so root is first
+    currentId = branch.parent_branch_id;
+  }
+
+  if (branchChain.length === 0) {
+    // Fallback: no branch found, return all messages
+    return getDb()
+      .prepare('SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(conversationId, limit)
+      .reverse() as Array<{ role: string; content: string }>;
+  }
+
+  // Collect messages following the branch chain
+  const messages: Array<{ role: string; content: string }> = [];
+
+  for (let i = 0; i < branchChain.length; i++) {
+    const branch = branchChain[i];
+
+    if (i < branchChain.length - 1) {
+      // For parent branches: get messages up to the next branch's branch_point_message_id
+      const nextBranch = branchChain[i + 1];
+      if (nextBranch.branch_point_message_id) {
+        const rows = getDb()
+          .prepare(
+            'SELECT role, content FROM messages WHERE conversation_id = ? AND branch_id = ? AND id <= ? ORDER BY id ASC',
+          )
+          .all(conversationId, branch.id, nextBranch.branch_point_message_id) as Array<{ role: string; content: string }>;
+        messages.push(...rows);
+      } else {
+        // No branch point specified, include all messages from this branch
+        const rows = getDb()
+          .prepare('SELECT role, content FROM messages WHERE conversation_id = ? AND branch_id = ? ORDER BY id ASC')
+          .all(conversationId, branch.id) as Array<{ role: string; content: string }>;
+        messages.push(...rows);
+      }
+    } else {
+      // For the current (leaf) branch: get all its messages
+      const rows = getDb()
+        .prepare('SELECT role, content FROM messages WHERE conversation_id = ? AND branch_id = ? ORDER BY id ASC')
+        .all(conversationId, branch.id) as Array<{ role: string; content: string }>;
+      messages.push(...rows);
+    }
+  }
+
+  // Apply limit (take last N messages)
+  return messages.slice(-limit);
 }
 
 export function addMessage(
@@ -207,12 +322,22 @@ export function addMessage(
   content: string,
   channelType?: string,
   externalSender?: string,
+  branchId?: string,
 ): number {
+  // Resolve branch: use provided branchId, or the conversation's active branch, or null
+  let effectiveBranchId = branchId;
+  if (!effectiveBranchId) {
+    const conv = getDb()
+      .prepare('SELECT active_branch_id FROM conversations WHERE id = ?')
+      .get(conversationId) as { active_branch_id: string | null } | undefined;
+    effectiveBranchId = conv?.active_branch_id || undefined;
+  }
+
   const result = getDb()
     .prepare(
-      'INSERT INTO messages (conversation_id, role, content, channel_type, external_sender) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO messages (conversation_id, role, content, channel_type, external_sender, branch_id) VALUES (?, ?, ?, ?, ?, ?)',
     )
-    .run(conversationId, role, content, channelType, externalSender);
+    .run(conversationId, role, content, channelType, externalSender, effectiveBranchId || null);
   return result.lastInsertRowid as number;
 }
 
@@ -228,6 +353,124 @@ export function countConversationMessages(conversationId: string): number {
     .prepare('SELECT COUNT(*) as count FROM messages WHERE conversation_id = ?')
     .get(conversationId) as { count: number };
   return row.count;
+}
+
+// --- Conversation Branching ---
+
+export interface ConversationBranchRow {
+  id: string;
+  conversation_id: string;
+  parent_branch_id: string | null;
+  branch_point_message_id: number | null;
+  name: string;
+  created_at: string;
+}
+
+export function getConversationBranches(conversationId: string): ConversationBranchRow[] {
+  return getDb()
+    .prepare('SELECT * FROM conversation_branches WHERE conversation_id = ? ORDER BY created_at ASC')
+    .all(conversationId) as ConversationBranchRow[];
+}
+
+export function getBranch(branchId: string): ConversationBranchRow | undefined {
+  return getDb()
+    .prepare('SELECT * FROM conversation_branches WHERE id = ?')
+    .get(branchId) as ConversationBranchRow | undefined;
+}
+
+export function createBranch(opts: {
+  conversationId: string;
+  parentBranchId: string;
+  branchPointMessageId: number;
+  name: string;
+}): ConversationBranchRow {
+  const id = require('uuid').v4();
+  getDb()
+    .prepare(
+      'INSERT INTO conversation_branches (id, conversation_id, parent_branch_id, branch_point_message_id, name) VALUES (?, ?, ?, ?, ?)',
+    )
+    .run(id, opts.conversationId, opts.parentBranchId, opts.branchPointMessageId, opts.name);
+
+  // Set the new branch as active
+  getDb()
+    .prepare('UPDATE conversations SET active_branch_id = ? WHERE id = ?')
+    .run(id, opts.conversationId);
+
+  return getBranch(id)!;
+}
+
+export function setActiveBranch(conversationId: string, branchId: string): void {
+  getDb()
+    .prepare('UPDATE conversations SET active_branch_id = ? WHERE id = ?')
+    .run(branchId, conversationId);
+}
+
+export function getActiveBranchId(conversationId: string): string | null {
+  const row = getDb()
+    .prepare('SELECT active_branch_id FROM conversations WHERE id = ?')
+    .get(conversationId) as { active_branch_id: string | null } | undefined;
+  return row?.active_branch_id || null;
+}
+
+export function deleteBranch(branchId: string): boolean {
+  const branch = getBranch(branchId);
+  if (!branch) return false;
+
+  // Don't allow deleting the main (root) branch
+  if (!branch.parent_branch_id) return false;
+
+  // Delete child branches first (cascade)
+  const children = getDb()
+    .prepare('SELECT id FROM conversation_branches WHERE parent_branch_id = ?')
+    .all(branchId) as Array<{ id: string }>;
+  for (const child of children) {
+    deleteBranch(child.id);
+  }
+
+  // Delete messages on this branch
+  getDb().prepare('DELETE FROM messages WHERE branch_id = ?').run(branchId);
+
+  // If this was the active branch, switch back to parent
+  const conv = getDb()
+    .prepare('SELECT active_branch_id FROM conversations WHERE id = ?')
+    .get(branch.conversation_id) as { active_branch_id: string | null } | undefined;
+  if (conv?.active_branch_id === branchId) {
+    getDb()
+      .prepare('UPDATE conversations SET active_branch_id = ? WHERE id = ?')
+      .run(branch.parent_branch_id, branch.conversation_id);
+  }
+
+  getDb().prepare('DELETE FROM conversation_branches WHERE id = ?').run(branchId);
+  return true;
+}
+
+export function getBranchTree(conversationId: string): Array<{
+  branch: ConversationBranchRow;
+  messageCount: number;
+  lastMessage: string | null;
+}> {
+  const branches = getConversationBranches(conversationId);
+  return branches.map((branch) => {
+    const count = getDb()
+      .prepare('SELECT COUNT(*) as count FROM messages WHERE branch_id = ?')
+      .get(branch.id) as { count: number };
+    const last = getDb()
+      .prepare('SELECT content FROM messages WHERE branch_id = ? ORDER BY id DESC LIMIT 1')
+      .get(branch.id) as { content: string } | undefined;
+    return {
+      branch,
+      messageCount: count.count,
+      lastMessage: last?.content || null,
+    };
+  });
+}
+
+export function getBranchMessagesDetailed(
+  branchId: string,
+): Array<{ id: number; role: string; content: string; created_at: string }> {
+  return getDb()
+    .prepare('SELECT id, role, content, created_at FROM messages WHERE branch_id = ? ORDER BY id ASC')
+    .all(branchId) as Array<{ id: number; role: string; content: string; created_at: string }>;
 }
 
 // --- Agent run tracking ---
