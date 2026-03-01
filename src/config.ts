@@ -7,6 +7,19 @@ export const config = {
   agentMaxTokens: parseInt(process.env.AGENT_MAX_TOKENS || '16384', 10),
   agentSystemPromptFile: process.env.AGENT_SYSTEM_PROMPT_FILE || '/data/system-prompt.md',
 
+  // --- Retry & Circuit Breaker ---
+  retry: {
+    maxRetries: parseInt(process.env.RETRY_MAX_RETRIES || '3', 10),
+    baseDelayMs: parseInt(process.env.RETRY_BASE_DELAY_MS || '1000', 10),
+    maxDelayMs: parseInt(process.env.RETRY_MAX_DELAY_MS || '30000', 10),
+    jitterFactor: parseFloat(process.env.RETRY_JITTER_FACTOR || '0.2'),
+  },
+  circuitBreaker: {
+    failureThreshold: parseInt(process.env.CB_FAILURE_THRESHOLD || '5', 10),
+    resetTimeoutMs: parseInt(process.env.CB_RESET_TIMEOUT_MS || '60000', 10),
+    halfOpenSuccessThreshold: parseInt(process.env.CB_HALF_OPEN_SUCCESS_THRESHOLD || '1', 10),
+  },
+
   dataDir: process.env.DATA_DIR || '/data',
   dbPath: process.env.DB_PATH || '/data/gateway.db',
 

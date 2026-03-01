@@ -20,6 +20,7 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 - **Built-in Agent Tools** -- Web browsing (Playwright), HTTP requests, script execution, and A2A tools (delegate, broadcast, query)
 - **Scheduler** -- Cron-based job scheduling with iCal calendar integration and output routing to channels or webhooks
 - **Usage Analytics** -- Per-call token tracking, cost estimation, daily/model breakdowns
+- **Retry & Circuit Breaker** -- Automatic retries with exponential backoff on transient API errors (429, 500, 502, 503, 529), circuit breaker pattern that fails fast after repeated failures, Retry-After header support, real-time state via API
 - **Auth & Rate Limiting** -- Session-based login, admin setup flow, IP-based rate limiting
 - **Real-time Dashboard** -- WebSocket-powered live activity feed, channel management, task monitoring
 - **SQLite Persistence** -- All data (messages, runs, usage, sessions, approvals, schedules) in a single portable database
@@ -87,6 +88,7 @@ npm run dev
 │  Agent Loop                                      │
 │  - Direct mode: API call in-process              │
 │  - Container mode: isolated Docker per call      │
+│  - Retry + Circuit Breaker on API calls          │
 │  - Token usage logging                           │
 │  - HITL approval checks before tool execution    │
 └──────────┬──────────────────┬────────────────────┘
@@ -156,6 +158,64 @@ docker compose up -d --build
 | `AGENT_CONTAINER_MODE` | `false` | Enable container isolation |
 | `MAX_CONCURRENT_CONTAINERS` | `3` | Max parallel agent containers |
 | `CONTAINER_TIMEOUT_MS` | `600000` | Container timeout (10 min) |
+
+## Retry & Circuit Breaker
+
+All Anthropic API calls (direct mode, container mode, and loop mode) are protected by an automatic retry mechanism with exponential backoff and a circuit breaker pattern.
+
+### How it works
+
+1. **Transient errors** (HTTP 429, 500, 502, 503, 529 and network errors like `ECONNRESET`) trigger automatic retries with exponential backoff.
+2. If the API returns a `Retry-After` header (common with 429), the delay respects that value.
+3. After **N consecutive failures** (default: 5), the **circuit breaker opens** -- all subsequent API calls fail immediately with a `CircuitOpenError` instead of hitting the API.
+4. After a cooldown period (default: 60s), the circuit transitions to **half-open** and allows a single probe request.
+5. If the probe succeeds, the circuit **closes** and normal operation resumes. If it fails, the circuit re-opens.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RETRY_MAX_RETRIES` | `3` | Maximum retry attempts per API call |
+| `RETRY_BASE_DELAY_MS` | `1000` | Base delay for exponential backoff (ms) |
+| `RETRY_MAX_DELAY_MS` | `30000` | Maximum delay cap (ms) |
+| `RETRY_JITTER_FACTOR` | `0.2` | Random jitter factor (0--1) to prevent thundering herd |
+| `CB_FAILURE_THRESHOLD` | `5` | Consecutive failures before the circuit opens |
+| `CB_RESET_TIMEOUT_MS` | `60000` | Cooldown before half-open probe (ms) |
+| `CB_HALF_OPEN_SUCCESS_THRESHOLD` | `1` | Successes needed in half-open state to close the circuit |
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/resilience` | Current circuit breaker stats (state, failure counts, timestamps) |
+| POST | `/api/resilience/reset` | Manually reset the circuit breaker to closed state |
+
+The `/api/health` endpoint also includes the current circuit breaker state.
+
+### State Diagram
+
+```
+     ┌──────────┐
+     │  CLOSED  │ ← normal operation, all calls pass through
+     └────┬─────┘
+          │ N consecutive failures
+          ▼
+     ┌──────────┐
+     │   OPEN   │ ← calls fail fast (CircuitOpenError)
+     └────┬─────┘
+          │ cooldown elapsed
+          ▼
+     ┌───────────┐
+     │ HALF-OPEN │ ← single probe allowed
+     └─────┬─────┘
+           │
+     ┌─────┴─────┐
+     │           │
+  success      failure
+     │           │
+     ▼           ▼
+  CLOSED       OPEN
+```
 
 ## Agent Groups
 
@@ -399,12 +459,19 @@ All endpoints require authentication (session token) unless the system is in set
 | GET | `/api/tasks/:id/output` | Get task output |
 | DELETE | `/api/tasks/:id` | Delete a task |
 
+### Resilience
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/resilience` | Circuit breaker stats (state, counters, timestamps) |
+| POST | `/api/resilience/reset` | Reset circuit breaker to closed state |
+
 ### Other
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/runs` | Recent agent runs |
-| GET | `/api/health` | Health check + uptime |
+| GET | `/api/health` | Health check + uptime + circuit breaker state |
 
 ## Adding Channels
 
@@ -435,6 +502,7 @@ All endpoints require authentication (session token) unless the system is in set
 │   ├── config.ts                   # Environment configuration
 │   ├── agent/
 │   │   ├── loop.ts                 # Agent loop (direct + container modes)
+│   │   ├── resilience.ts           # Retry + circuit breaker for API calls
 │   │   ├── container-runner.ts     # Docker container spawning
 │   │   ├── loop-mode.ts            # Autonomous task loop
 │   │   ├── a2a/                    # Agent-to-Agent protocol

@@ -12,6 +12,7 @@ import {
 } from '../agent/loop-mode';
 import { getContainerStats } from '../agent/container-runner';
 import { isContainerMode } from '../agent/loop';
+import { getDefaultCircuitBreaker } from '../agent/resilience';
 import { toolRegistry } from '../agent/tools';
 import { login, logout, setupAdmin, isSetupRequired } from '../auth/middleware';
 import { getAllSkills, toggleSkill, deleteSkill, installSkill, updateSkill } from '../agent/skills';
@@ -847,13 +848,26 @@ export function createApiRouter(): Router {
     }
   });
 
+  // ==================== Resilience ====================
+
+  router.get('/resilience', (_req: Request, res: Response) => {
+    res.json(getDefaultCircuitBreaker().getStats());
+  });
+
+  router.post('/resilience/reset', (_req: Request, res: Response) => {
+    getDefaultCircuitBreaker().reset();
+    res.json({ ok: true, state: 'closed' });
+  });
+
   // ==================== Health ====================
 
   router.get('/health', (_req: Request, res: Response) => {
+    const cbStats = getDefaultCircuitBreaker().getStats();
     res.json({
       status: 'ok',
       uptime: process.uptime(),
       containerMode: isContainerMode(),
+      circuitBreaker: cbStats.circuitState,
     });
   });
 
