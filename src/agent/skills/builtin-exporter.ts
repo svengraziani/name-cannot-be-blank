@@ -150,6 +150,36 @@ const BUILTIN_SKILLS: SkillManifest[] = [
     handler: './handler.js',
     containerCompatible: false,
   },
+  {
+    name: 'capcut_api',
+    description:
+      'Create and edit CapCut/JianYing video drafts programmatically via a local CapCutAPI server. Supports creating drafts, adding video/audio/image tracks, styled text, SRT subtitles, effects, stickers, and keyframe animations. Workflow: create_draft → add media → save_draft → open in CapCut.',
+    version: '1.0.0',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: [
+            'create_draft', 'add_video', 'add_audio', 'add_image', 'add_text', 'add_subtitle',
+            'add_effect', 'add_sticker', 'add_video_keyframe', 'save_draft', 'query_draft_status',
+            'query_script', 'generate_draft_url', 'get_intro_animation_types', 'get_outro_animation_types',
+            'get_combo_animation_types', 'get_transition_types', 'get_mask_types', 'get_audio_effect_types',
+            'get_font_types', 'get_text_intro_types', 'get_text_outro_types', 'get_text_loop_anim_types',
+            'get_video_scene_effect_types', 'get_video_character_effect_types',
+          ],
+          description: 'The CapCut API action to perform',
+        },
+        params: {
+          type: 'object',
+          description: 'Parameters for the action (varies by action type)',
+        },
+      },
+      required: ['action'],
+    },
+    handler: './handler.js',
+    containerCompatible: false,
+  },
 ];
 
 const BUILTIN_HANDLER_STUB = `// Built-in skill - execution is handled natively by the gateway.
