@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Agentic Loop Gateway - Easy Docker setup for AI agent loops with messaging channel UI",
   "main": "dist/index.js",
+  "bin": {
+    "loop-gw": "./dist/cli/index.js"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
