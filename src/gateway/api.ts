@@ -24,6 +24,8 @@ import {
   assignChannelToGroup,
   unassignChannelFromGroup,
   getAgentGroupStats,
+  getAllTemplates,
+  getTemplate,
 } from '../agent/groups';
 import {
   getActiveAgents,
@@ -505,6 +507,98 @@ export function createApiRouter(): Router {
     try {
       const stats = getAgentGroupStats(req.params.id as string);
       res.json(stats);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== Template Gallery ====================
+
+  router.get('/templates', (_req: Request, res: Response) => {
+    try {
+      const templates = getAllTemplates();
+      res.json(templates);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/templates/:id', (req: Request, res: Response) => {
+    try {
+      const template = getTemplate(req.params.id as string);
+      if (!template) {
+        res.status(404).json({ error: 'Template not found' });
+        return;
+      }
+      res.json(template);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/templates/:id/import', (req: Request, res: Response) => {
+    try {
+      const template = getTemplate(req.params.id as string);
+      if (!template) {
+        res.status(404).json({ error: 'Template not found' });
+        return;
+      }
+
+      // Create the agent group from the template
+      const group = createAgentGroup({
+        ...template.group,
+        // Allow overriding name via request body
+        name: req.body.name || template.group.name,
+      });
+
+      // Create approval rules from the template
+      const createdRules: string[] = [];
+      for (const rule of template.approvalRules) {
+        try {
+          upsertApprovalRule(rule);
+          createdRules.push(rule.toolName);
+        } catch {
+          // Rule may already exist, skip silently
+        }
+      }
+
+      // Create scheduler jobs from the template
+      const createdJobs: string[] = [];
+      for (const jobTemplate of template.schedulerJobs) {
+        try {
+          const job = createJob({
+            name: jobTemplate.name,
+            description: jobTemplate.description,
+            trigger: jobTemplate.trigger,
+            action: {
+              ...jobTemplate.action,
+              agentGroupId: group.id,
+            },
+            output: jobTemplate.output,
+          });
+          scheduleJob(job.id);
+          createdJobs.push(job.id);
+        } catch {
+          // Job creation may fail, skip silently
+        }
+      }
+
+      res.json({
+        status: 'imported',
+        templateId: template.id,
+        group: {
+          ...group,
+          apiKeyEncrypted: undefined,
+          hasApiKey: !!group.apiKeyEncrypted,
+          githubTokenEncrypted: undefined,
+          hasGithubToken: !!group.githubTokenEncrypted,
+        },
+        approvalRules: createdRules,
+        schedulerJobs: createdJobs,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });

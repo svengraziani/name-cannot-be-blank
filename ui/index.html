@@ -131,6 +131,21 @@
     .usage-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .usage-table th { text-align: left; padding: 8px; color: var(--text2); border-bottom: 1px solid var(--border); font-weight: 500; }
     .usage-table td { padding: 8px; border-bottom: 1px solid var(--border); }
+
+    /* Template Gallery */
+    .template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+    .template-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 12px; padding: 20px; transition: all 0.2s; position: relative; overflow: hidden; }
+    .template-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+    .template-card .template-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 14px; }
+    .template-card .template-name { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+    .template-card .template-category { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; font-weight: 500; }
+    .template-card .template-desc { font-size: 13px; color: var(--text2); line-height: 1.5; margin-bottom: 16px; }
+    .template-card .template-features { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .template-card .template-feature { font-size: 11px; padding: 3px 8px; border-radius: 4px; background: rgba(108,99,255,0.1); color: var(--accent2); }
+    .template-card .template-actions { display: flex; gap: 8px; }
+    .template-importing { opacity: 0.6; pointer-events: none; }
+    .template-success { border-color: var(--green) !important; }
+    .template-success::after { content: 'Importiert!'; position: absolute; top: 12px; right: 12px; font-size: 11px; color: var(--green); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -168,6 +183,7 @@
 
     <div class="tabs">
       <div class="tab active" onclick="switchTab('dashboard')">Dashboard</div>
+      <div class="tab" onclick="switchTab('templates')">Templates</div>
       <div class="tab" onclick="switchTab('groups')">Agent Groups</div>
       <div class="tab" onclick="switchTab('skills')">Skills</div>
       <div class="tab" onclick="switchTab('scheduler')">Scheduler</div>
@@ -254,6 +270,19 @@
         <div class="card full">
           <h2>Recent API Calls</h2>
           <div id="recentCalls" style="max-height:400px;overflow-y:auto;"><div class="empty-state" style="padding:20px;"><p>No calls yet</p></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== TEMPLATE GALLERY TAB ===== -->
+    <div class="tab-content" id="tab-templates">
+      <div class="container">
+        <div class="card full" style="margin-bottom:20px;">
+          <h2 style="margin-bottom:4px;">Template Gallery</h2>
+          <p style="color:var(--text2);font-size:13px;margin-bottom:20px;">Vorgefertigte Agent-Group-Templates mit System Prompt, Skills, Approval Rules und Scheduler Jobs. Ein Klick und alles ist konfiguriert.</p>
+          <div class="template-grid" id="templateGallery">
+            <div class="empty-state"><p>Lade Templates...</p></div>
+          </div>
         </div>
       </div>
     </div>
@@ -605,6 +634,7 @@
       document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
       document.querySelector(`.tab-content#tab-${name}`).classList.add('active');
       event.target.classList.add('active');
+      if (name === 'templates') refreshTemplates();
       if (name === 'usage') refreshUsage();
       if (name === 'tasks') refreshTasks();
       if (name === 'groups') refreshGroups();
@@ -805,6 +835,117 @@
     async function stopTaskAction(id) { await apiFetch(`/api/tasks/${id}/stop`, {method:'POST'}); refreshTasks(); }
     async function startTaskAction(id) { await apiFetch(`/api/tasks/${id}/start`, {method:'POST'}); refreshTasks(); }
     async function deleteTaskAction(id) { if (!confirm('Delete this task?')) return; await apiFetch(`/api/tasks/${id}`, {method:'DELETE'}); refreshTasks(); }
+
+    // === Template Gallery Tab ===
+    let templates = [];
+
+    async function refreshTemplates() {
+      try {
+        const res = await apiFetch('/api/templates');
+        templates = await res.json();
+        renderTemplates();
+      } catch {}
+    }
+
+    function renderTemplates() {
+      const el = document.getElementById('templateGallery');
+      if (!templates.length) {
+        el.innerHTML = '<div class="empty-state"><p>Keine Templates verfuegbar.</p></div>';
+        return;
+      }
+      el.innerHTML = templates.map(t => {
+        const features = [];
+        if (t.group.skills?.length) features.push(t.group.skills.length + ' Skills');
+        if (t.approvalRules?.length) features.push(t.approvalRules.length + ' Approval Rules');
+        if (t.schedulerJobs?.length) features.push(t.schedulerJobs.length + ' Scheduler Jobs');
+        if (t.group.roles?.length) features.push(t.group.roles.length + ' Roles');
+        features.push(t.group.model?.replace('claude-', '').replace('-20250514', '').replace('-20250414', ''));
+        if (t.group.budgetMaxTokensDay > 0) features.push('Budget: ' + fmtNum(t.group.budgetMaxTokensDay) + '/Tag');
+
+        return `
+          <div class="template-card" id="template-card-${t.id}">
+            <div class="template-icon" style="background:${t.color}20;color:${t.color};">${t.icon}</div>
+            <div class="template-name">${escHtml(t.name)}</div>
+            <div class="template-category" style="color:${t.color};">${escHtml(t.category)}</div>
+            <div class="template-desc">${escHtml(t.description)}</div>
+            <div class="template-features">
+              ${features.map(f => `<span class="template-feature">${escHtml(f)}</span>`).join('')}
+            </div>
+            <div class="template-actions">
+              <button class="btn primary" onclick="importTemplate('${t.id}')">Importieren</button>
+              <button class="btn" onclick="previewTemplate('${t.id}')">Details</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function importTemplate(id) {
+      const card = document.getElementById('template-card-' + id);
+      if (!card) return;
+      if (!confirm('Template importieren? Es wird eine neue Agent Group mit allen vorkonfigurierten Einstellungen erstellt.')) return;
+
+      card.classList.add('template-importing');
+      try {
+        const res = await apiFetch('/api/templates/' + id + '/import', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || 'Import fehlgeschlagen');
+
+        card.classList.remove('template-importing');
+        card.classList.add('template-success');
+
+        const parts = ['Agent Group "' + result.group.name + '" erstellt.'];
+        if (result.approvalRules?.length) parts.push(result.approvalRules.length + ' Approval Rules konfiguriert.');
+        if (result.schedulerJobs?.length) parts.push(result.schedulerJobs.length + ' Scheduler Jobs erstellt.');
+        addLog('status', 'Template importiert: ' + result.group.name);
+        alert(parts.join('\n'));
+
+        setTimeout(() => card.classList.remove('template-success'), 3000);
+      } catch (e) {
+        card.classList.remove('template-importing');
+        alert('Fehler beim Import: ' + e.message);
+      }
+    }
+
+    function previewTemplate(id) {
+      const t = templates.find(tmpl => tmpl.id === id);
+      if (!t) return;
+
+      let details = '=== ' + t.name + ' ===\n\n';
+      details += 'Kategorie: ' + t.category + '\n';
+      details += 'Beschreibung: ' + t.description + '\n\n';
+      details += '--- System Prompt ---\n';
+      details += t.group.systemPrompt.slice(0, 500) + (t.group.systemPrompt.length > 500 ? '...' : '') + '\n\n';
+      details += '--- Konfiguration ---\n';
+      details += 'Model: ' + t.group.model + '\n';
+      details += 'Max Tokens: ' + t.group.maxTokens + '\n';
+      details += 'Budget/Tag: ' + (t.group.budgetMaxTokensDay > 0 ? fmtNum(t.group.budgetMaxTokensDay) : 'unbegrenzt') + '\n';
+      details += 'Budget/Monat: ' + (t.group.budgetMaxTokensMonth > 0 ? fmtNum(t.group.budgetMaxTokensMonth) : 'unbegrenzt') + '\n';
+      details += 'Skills: ' + (t.group.skills?.join(', ') || 'keine') + '\n\n';
+
+      if (t.approvalRules?.length) {
+        details += '--- Approval Rules ---\n';
+        t.approvalRules.forEach(r => {
+          details += '  ' + r.toolName + ': ' + r.riskLevel + (r.requireApproval ? ' (Approval erforderlich)' : ' (Auto)') + '\n';
+        });
+        details += '\n';
+      }
+
+      if (t.schedulerJobs?.length) {
+        details += '--- Scheduler Jobs ---\n';
+        t.schedulerJobs.forEach(j => {
+          details += '  ' + j.name + ': ' + j.trigger.type;
+          if (j.trigger.time) details += ' um ' + j.trigger.time.hour + ':' + String(j.trigger.time.minute).padStart(2, '0');
+          if (j.trigger.intervalMinutes) details += ' alle ' + j.trigger.intervalMinutes + ' Min.';
+          details += '\n';
+        });
+      }
+
+      alert(details);
+    }
 
     // === Agent Groups Tab ===
     let agentGroups = [];
