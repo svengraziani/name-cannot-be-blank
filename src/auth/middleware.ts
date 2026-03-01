@@ -84,7 +84,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
   }
 
   // Skip auth for login/setup endpoints
-  if (req.path === '/api/auth/login' || req.path === '/api/auth/setup' || req.path === '/api/auth/status') {
+  if (req.path === '/auth/login' || req.path === '/auth/setup' || req.path === '/auth/status') {
     next();
     return;
   }
