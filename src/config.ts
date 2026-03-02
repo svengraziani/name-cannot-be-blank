@@ -26,6 +26,28 @@ export const config = {
     token: process.env.GITHUB_TOKEN || '',
   },
 
+  discord: {
+    botToken: process.env.DISCORD_BOT_TOKEN || '',
+    allowedChannels: (process.env.DISCORD_ALLOWED_CHANNELS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+    allowedUsers: (process.env.DISCORD_ALLOWED_USERS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  },
+
+  slack: {
+    botToken: process.env.SLACK_BOT_TOKEN || '',
+    appToken: process.env.SLACK_APP_TOKEN || '',
+    signingSecret: process.env.SLACK_SIGNING_SECRET || '',
+    allowedChannels: (process.env.SLACK_ALLOWED_CHANNELS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  },
+
   email: {
     imapHost: process.env.EMAIL_IMAP_HOST || '',
     imapPort: parseInt(process.env.EMAIL_IMAP_PORT || '993', 10),
