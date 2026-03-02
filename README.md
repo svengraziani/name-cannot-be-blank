@@ -10,7 +10,7 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 
 ## Features
 
-- **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), and Email (IMAP/SMTP) adapters
+- **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), and Email (IMAP/SMTP) adapters with typing indicators for a natural chat experience
 - **Container Isolation** -- Run each agent call in an isolated Docker container (nanoclaw pattern: secrets via stdin, no network leaks)
 - **Loop Mode** -- Autonomous task execution with prompt files (ralph-wiggum pattern: plan/build loops)
 - **Agent Groups** -- Group agents with per-group system prompts, model selection, skills, budgets (daily/monthly token caps), and channel binding
@@ -22,6 +22,7 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 - **Usage Analytics** -- Per-call token tracking, cost estimation, daily/model breakdowns
 - **Auth & Rate Limiting** -- Session-based login, admin setup flow, IP-based rate limiting
 - **Real-time Dashboard** -- WebSocket-powered live activity feed, channel management, task monitoring
+- **Typing Indicators** -- Telegram and WhatsApp show "typing..." while the agent is processing, refreshed automatically until the response is ready
 - **SQLite Persistence** -- All data (messages, runs, usage, sessions, approvals, schedules) in a single portable database
 
 ## Quick Start

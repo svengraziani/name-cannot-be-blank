@@ -43,6 +43,14 @@ export abstract class ChannelAdapter extends EventEmitter {
     );
   }
 
+  /**
+   * Send a typing indicator (e.g. "typing..." in Telegram, "composing" in WhatsApp).
+   * Default implementation is a no-op. Override in subclasses that support it.
+   */
+  async sendTypingIndicator(_externalChatId: string): Promise<void> {
+    // No-op by default
+  }
+
   /** Override to return channel-specific status info (e.g. QR code for WhatsApp) */
   getStatusInfo(): Record<string, unknown> {
     return {};

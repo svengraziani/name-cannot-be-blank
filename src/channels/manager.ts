@@ -320,6 +320,22 @@ async function stopChannel(id: string): Promise<void> {
   }
 }
 
+// Typing indicator refresh interval (Telegram expires after ~5s, WhatsApp after ~10s)
+const TYPING_INTERVAL_MS = 4000;
+
+/**
+ * Start sending periodic typing indicators.
+ * Returns a cleanup function to stop the interval.
+ */
+function startTypingIndicator(adapter: ChannelAdapter, externalChatId: string): () => void {
+  // Send immediately, then repeat on interval
+  adapter.sendTypingIndicator(externalChatId).catch(() => {});
+  const timer = setInterval(() => {
+    adapter.sendTypingIndicator(externalChatId).catch(() => {});
+  }, TYPING_INTERVAL_MS);
+  return () => clearInterval(timer);
+}
+
 /**
  * Process a single conversation message through the agent loop.
  */
@@ -329,6 +345,9 @@ async function handleConversationMessage(
   adapter: ChannelAdapter,
   enabledTools?: string[],
 ): Promise<void> {
+  // Show "typing..." while the agent is working
+  const stopTyping = startTypingIndicator(adapter, msg.externalChatId);
+
   try {
     const agentConfig = resolveAgentConfig(msg.channelId, getSystemPrompt());
 
@@ -367,6 +386,8 @@ async function handleConversationMessage(
     } catch {
       // ignore send failure
     }
+  } finally {
+    stopTyping();
   }
 }
 
