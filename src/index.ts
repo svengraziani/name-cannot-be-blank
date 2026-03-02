@@ -9,6 +9,7 @@ import { initA2ASchema } from './agent/a2a';
 import { initSchedulerSchema, startScheduler, startCalendarPolling } from './scheduler';
 import { initHitlSchema, expireStaleApprovals } from './agent/hitl';
 import { cleanupStaleWorkspaces } from './agent/tools/git-repo';
+import { initFileHandling } from './files';
 
 async function main() {
   console.log('='.repeat(50));
@@ -47,6 +48,9 @@ async function main() {
 
   // Initialize HITL approval schema
   initHitlSchema();
+
+  // Initialize file handling (storage dir + DB schema)
+  initFileHandling();
 
   // Create HTTP/WS server
   const app = createServer();

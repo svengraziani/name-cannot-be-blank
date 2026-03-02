@@ -2,6 +2,7 @@ import { ChannelAdapter, IncomingMessage } from './base';
 import Imap from 'imap';
 import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
+import { storeFile, FileAttachment, validateMimeType } from '../files';
 
 export interface EmailConfig {
   imapHost: string;
@@ -104,6 +105,23 @@ export class EmailAdapter extends ChannelAdapter {
     });
   }
 
+  override async sendFile(externalChatId: string, filePath: string, filename: string, _mimeType: string): Promise<void> {
+    if (!this.transporter) throw new Error('SMTP not configured');
+
+    await this.transporter.sendMail({
+      from: this.conf.smtpUser,
+      to: externalChatId,
+      subject: 'Re: Agent Response - File',
+      text: `Please find the attached file: ${filename}`,
+      attachments: [
+        {
+          filename,
+          path: filePath,
+        },
+      ],
+    });
+  }
+
   private async pollEmails(): Promise<void> {
     if (!this.imap || this.imap.state !== 'authenticated') return;
 
@@ -134,20 +152,46 @@ export class EmailAdapter extends ChannelAdapter {
               const from = parsed.from?.value?.[0]?.address || '';
               const text = parsed.text || '';
 
-              if (!text) return;
-
               // Filter by allowed senders
               if (this.conf.allowedSenders.length > 0 && !this.conf.allowedSenders.includes(from)) {
                 return;
               }
+
+              // Process attachments
+              const attachments: FileAttachment[] = [];
+              if (parsed.attachments && parsed.attachments.length > 0) {
+                for (const att of parsed.attachments) {
+                  const mimeType = att.contentType || 'application/octet-stream';
+                  const filename = att.filename || `attachment_${Date.now()}`;
+                  if (validateMimeType(mimeType) && att.content) {
+                    try {
+                      const stored = storeFile(
+                        att.content,
+                        filename,
+                        mimeType,
+                        undefined,
+                        'email',
+                        from,
+                      );
+                      attachments.push(stored);
+                    } catch (err) {
+                      console.error(`[email:${this.channelId}] Failed to store attachment:`, err);
+                    }
+                  }
+                }
+              }
+
+              // Skip messages with no text and no attachments
+              if (!text && attachments.length === 0) return;
 
               const incoming: IncomingMessage = {
                 channelId: this.channelId,
                 channelType: 'email',
                 externalChatId: from,
                 sender: parsed.from?.value?.[0]?.name || from,
-                text,
+                text: text || '(file attached)',
                 chatTitle: parsed.subject || undefined,
+                attachments: attachments.length > 0 ? attachments : undefined,
               };
 
               this.emit('message', incoming);
