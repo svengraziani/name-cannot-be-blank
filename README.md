@@ -11,6 +11,7 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 ## Features
 
 - **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), and Email (IMAP/SMTP) adapters
+- **Channel Context Injection** -- The agent automatically adapts tone and style based on the originating channel (Telegram → casual, Email → formal, WhatsApp → emoji-friendly) without per-channel prompts
 - **Container Isolation** -- Run each agent call in an isolated Docker container (nanoclaw pattern: secrets via stdin, no network leaks)
 - **Loop Mode** -- Autonomous task execution with prompt files (ralph-wiggum pattern: plan/build loops)
 - **Agent Groups** -- Group agents with per-group system prompts, model selection, skills, budgets (daily/monthly token caps), and channel binding
@@ -427,6 +428,30 @@ All endpoints require authentication (session token) unless the system is in set
 2. Enter IMAP and SMTP credentials
 3. The gateway polls for new emails and replies via SMTP
 
+## Channel Context Injection
+
+The agent automatically detects which channel a message originates from and adapts its communication style — no separate prompt per channel needed.
+
+| Channel    | Style                                              |
+|------------|----------------------------------------------------|
+| Telegram   | Short, casual, mobile-friendly Markdown             |
+| WhatsApp   | Conversational, emojis welcome, simple formatting   |
+| Email      | Professional tone, greeting/sign-off, structured    |
+| Mattermost | Team-friendly, concise, full Markdown support       |
+
+Channel context is injected transparently into the system prompt before every API call. If a channel type is unknown, no style hint is added and the prompt stays unchanged.
+
+### How it works
+
+1. A message arrives from a channel (e.g. Telegram)
+2. The channel adapter tags the message with its `channelType`
+3. Before the Claude API call, `injectChannelContext()` appends a style block to the system prompt
+4. The agent responds in the appropriate tone — automatically
+
+### Customizing style hints
+
+Edit `src/channels/context.ts` to adjust the built-in style hints or add new channel types.
+
 ## Project Structure
 
 ```
@@ -467,6 +492,7 @@ All endpoints require authentication (session token) unless the system is in set
 │   │   └── middleware.ts            # Session auth, rate limiting
 │   ├── channels/
 │   │   ├── base.ts                 # Abstract channel adapter
+│   │   ├── context.ts              # Channel context injection (style hints)
 │   │   ├── manager.ts              # Channel lifecycle + routing
 │   │   ├── telegram.ts             # Telegram adapter
 │   │   ├── whatsapp.ts             # WhatsApp adapter (Baileys)
