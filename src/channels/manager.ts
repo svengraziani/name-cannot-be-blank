@@ -5,6 +5,7 @@ import { TelegramAdapter, TelegramConfig } from './telegram';
 import { WhatsAppAdapter } from './whatsapp';
 import { EmailAdapter, EmailConfig } from './email';
 import { MattermostAdapter, MattermostConfig } from './mattermost';
+import { WebhookAdapter, WebhookConfig } from './webhook';
 import {
   getAllChannels,
   upsertChannel,
@@ -188,6 +189,9 @@ async function startChannel(ch: ChannelRow): Promise<void> {
       break;
     case 'mattermost':
       adapter = new MattermostAdapter(ch.id, conf as MattermostConfig);
+      break;
+    case 'webhook':
+      adapter = new WebhookAdapter(ch.id, conf as WebhookConfig);
       break;
     default:
       throw new Error(`Unknown channel type: ${ch.type}`);
