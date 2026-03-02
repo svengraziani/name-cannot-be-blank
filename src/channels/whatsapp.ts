@@ -1,4 +1,4 @@
-import { ChannelAdapter, IncomingMessage } from './base';
+import { ChannelAdapter, IncomingMessage, OutgoingFile } from './base';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -247,6 +247,25 @@ export class WhatsAppAdapter extends ChannelAdapter {
   async sendMessage(externalChatId: string, text: string): Promise<void> {
     if (!this.sock) throw new Error('WhatsApp not connected');
     await this.sock.sendMessage(externalChatId, { text });
+  }
+
+  override async sendFile(externalChatId: string, file: OutgoingFile): Promise<void> {
+    if (!this.sock) throw new Error('WhatsApp not connected');
+
+    if (file.mimeType.startsWith('image/')) {
+      await this.sock.sendMessage(externalChatId, {
+        image: file.data,
+        caption: file.caption || file.filename,
+        mimetype: file.mimeType,
+      });
+    } else {
+      await this.sock.sendMessage(externalChatId, {
+        document: file.data,
+        fileName: file.filename,
+        caption: file.caption || file.filename,
+        mimetype: file.mimeType,
+      });
+    }
   }
 
   /** Store the data URL after conversion by the manager */

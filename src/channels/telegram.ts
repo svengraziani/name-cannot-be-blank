@@ -1,5 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
-import { ChannelAdapter, IncomingMessage } from './base';
+import { ChannelAdapter, IncomingMessage, OutgoingFile } from './base';
 import { respondToApproval } from '../agent/hitl';
 
 export interface TelegramConfig {
@@ -16,10 +16,7 @@ function markdownToTelegramHtml(text: string): string {
   let result = text;
 
   // Escape HTML entities first (but preserve existing valid chars)
-  result = result
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  result = result.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   // Code blocks (``` ... ```) - extract to placeholders so inline
   // conversions (bold, italic, etc.) don't corrupt their content.
@@ -126,9 +123,7 @@ export class TelegramAdapter extends ChannelAdapter {
 
           // Answer the callback to remove the loading spinner
           await this.bot!.answerCallbackQuery(query.id, {
-            text: ok
-              ? `${isApprove ? 'Approved' : 'Rejected'}`
-              : 'Already resolved or not found',
+            text: ok ? `${isApprove ? 'Approved' : 'Rejected'}` : 'Already resolved or not found',
           });
 
           // Update the message to show the result (remove buttons)
@@ -181,7 +176,12 @@ export class TelegramAdapter extends ChannelAdapter {
     this.setStatus('disconnected');
   }
 
-  override async sendApprovalPrompt(externalChatId: string, approvalId: string, toolName: string, riskLevel: string): Promise<void> {
+  override async sendApprovalPrompt(
+    externalChatId: string,
+    approvalId: string,
+    toolName: string,
+    riskLevel: string,
+  ): Promise<void> {
     if (!this.bot) throw new Error('Telegram bot not connected');
 
     const text = `<b>Approval required</b> [${riskLevel}]\nTool: <code>${toolName}</code>`;
@@ -228,9 +228,7 @@ export class TelegramAdapter extends ChannelAdapter {
         await this.bot.sendMessage(externalChatId, chunk, { parse_mode: 'HTML' });
       } catch (err: unknown) {
         // If Telegram rejects the HTML (malformed tags), fall back to plain text
-        const isParseError =
-          err instanceof Error &&
-          err.message.includes("can't parse entities");
+        const isParseError = err instanceof Error && err.message.includes("can't parse entities");
         if (isParseError) {
           console.warn(`[telegram:${this.channelId}] HTML parse error, falling back to plain text`);
           const plain = chunk.replace(/<[^>]+>/g, '');
@@ -239,6 +237,28 @@ export class TelegramAdapter extends ChannelAdapter {
           throw err;
         }
       }
+    }
+  }
+
+  override async sendFile(externalChatId: string, file: OutgoingFile): Promise<void> {
+    if (!this.bot) throw new Error('Telegram bot not connected');
+
+    const caption = file.caption || file.filename;
+
+    if (file.mimeType.startsWith('image/')) {
+      await this.bot.sendPhoto(
+        externalChatId,
+        file.data,
+        { caption },
+        { filename: file.filename, contentType: file.mimeType },
+      );
+    } else {
+      await this.bot.sendDocument(
+        externalChatId,
+        file.data,
+        { caption },
+        { filename: file.filename, contentType: file.mimeType },
+      );
     }
   }
 }

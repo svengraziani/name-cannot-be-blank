@@ -4,6 +4,7 @@ import { config } from '../config';
 import { getConversationMessages, addMessage, createAgentRun, updateAgentRun, logApiCall } from '../db/sqlite';
 import { runInContainer, checkContainerRuntime, ContainerInput } from './container-runner';
 import { toolRegistry } from './tools';
+import { FileAttachment } from './tools/types';
 import { EventEmitter } from 'events';
 import { ResolvedAgentConfig } from './groups/resolver';
 import { setA2AContext } from './a2a';
@@ -47,6 +48,12 @@ interface AgentResponse {
   inputTokens: number;
   outputTokens: number;
   toolCalls: number;
+  files?: FileAttachment[];
+}
+
+export interface ProcessMessageResult {
+  content: string;
+  files?: FileAttachment[];
 }
 
 // Maximum number of tool-use iterations per message to prevent runaway loops
@@ -93,7 +100,7 @@ export async function processMessage(
   sender: string,
   enabledTools?: string[],
   agentConfig?: ResolvedAgentConfig,
-): Promise<string> {
+): Promise<ProcessMessageResult> {
   // Store user message
   const msgId = addMessage(conversationId, 'user', userMessage, channelType, sender);
   const runId = createAgentRun(conversationId, msgId);
@@ -191,7 +198,7 @@ export async function processMessage(
       containerMode: useContainer,
     });
 
-    return response.content;
+    return { content: response.content, files: response.files };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     updateAgentRun(runId, { status: 'error', error: errorMsg });
@@ -222,6 +229,7 @@ async function callAgentDirect(
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalToolCalls = 0;
+  const collectedFiles: FileAttachment[] = [];
 
   const model = overrideModel || config.agentModel;
   const maxTokens = overrideMaxTokens || config.agentMaxTokens;
@@ -248,7 +256,9 @@ async function callAgentDirect(
       // If we hit the token limit mid-generation, the response is truncated.
       // Log a warning so we can diagnose, and append a note for the user.
       if (response.stop_reason === 'max_tokens') {
-        console.warn(`[agent] Response truncated at max_tokens (${maxTokens}) on iteration ${iteration}, tool calls so far: ${totalToolCalls}`);
+        console.warn(
+          `[agent] Response truncated at max_tokens (${maxTokens}) on iteration ${iteration}, tool calls so far: ${totalToolCalls}`,
+        );
         content += '\n\n(Response was cut short due to length limits. Please try a shorter or simpler request.)';
       }
 
@@ -257,6 +267,7 @@ async function callAgentDirect(
         inputTokens: totalInputTokens,
         outputTokens: totalOutputTokens,
         toolCalls: totalToolCalls,
+        files: collectedFiles.length > 0 ? collectedFiles : undefined,
       };
     }
 
@@ -326,7 +337,17 @@ async function callAgentDirect(
 
         const result = await toolRegistry.execute(block.name, toolInput);
 
-        console.log(`[agent] Tool result: ${result.isError ? 'ERROR' : 'OK'} (${result.content.length} chars)${result.isError ? ' — ' + result.content.slice(0, 500) : ''}`);
+        // Collect file attachments from tool results (charts, PDFs, Excel files, etc.)
+        if (result.files && result.files.length > 0) {
+          collectedFiles.push(...result.files);
+          console.log(
+            `[agent] Tool ${block.name} produced ${result.files.length} file(s): ${result.files.map((f) => f.filename).join(', ')}`,
+          );
+        }
+
+        console.log(
+          `[agent] Tool result: ${result.isError ? 'ERROR' : 'OK'} (${result.content.length} chars)${result.isError ? ' — ' + result.content.slice(0, 500) : ''}`,
+        );
         agentEvents.emit('tool:result', {
           runId,
           iteration,
@@ -354,6 +375,7 @@ async function callAgentDirect(
     inputTokens: totalInputTokens,
     outputTokens: totalOutputTokens,
     toolCalls: totalToolCalls,
+    files: collectedFiles.length > 0 ? collectedFiles : undefined,
   };
 }
 

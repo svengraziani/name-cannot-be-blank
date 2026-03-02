@@ -17,7 +17,8 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 - **Agent-to-Agent (A2A) Protocol** -- Multi-agent coordination with message bus, sub-agent spawning, predefined roles, task delegation, and broadcasting
 - **Human-in-the-Loop (HITL)** -- Approval workflows with configurable risk levels per tool, auto-approve rules, timeouts, and real-time WebSocket notifications
 - **Skills System** -- Dynamic, file-based tool extensions. Built-in tools are exported as skills; custom skills can be uploaded, toggled, and hot-reloaded
-- **Built-in Agent Tools** -- Web browsing (Playwright), HTTP requests, script execution, and A2A tools (delegate, broadcast, query)
+- **Multi-Modal Output** -- Agent generates Charts (PNG via Chart.js), PDFs (via PDFKit), and Excel files (via ExcelJS) and sends them directly through the messaging channel
+- **Built-in Agent Tools** -- Web browsing (Playwright), HTTP requests, script execution, multi-modal output (charts, PDFs, Excel), and A2A tools (delegate, broadcast, query)
 - **Scheduler** -- Cron-based job scheduling with iCal calendar integration and output routing to channels or webhooks
 - **Usage Analytics** -- Per-call token tracking, cost estimation, daily/model breakdowns
 - **Auth & Rate Limiting** -- Session-based login, admin setup flow, IP-based rate limiting
@@ -221,6 +222,37 @@ curl -X POST http://localhost:3000/api/skills \
     "handler": "module.exports = async ({ query }) => ({ result: query.toUpperCase() });"
   }'
 ```
+
+## Multi-Modal Output
+
+The agent can generate rich file outputs -- charts, PDFs, and Excel spreadsheets -- and send them directly through the messaging channel as file attachments.
+
+### Supported formats
+
+| Tool | Output | Library |
+|------|--------|---------|
+| `generate_chart` | PNG chart images (bar, line, pie, doughnut, radar, polarArea) | Chart.js via chartjs-node-canvas |
+| `generate_pdf` | PDF documents with titles, paragraphs, tables, and lists | PDFKit |
+| `generate_excel` | XLSX spreadsheets with multiple sheets, styled headers, and auto-filter | ExcelJS |
+
+### Channel support
+
+| Channel | File delivery |
+|---------|---------------|
+| Telegram | Native photo/document upload |
+| WhatsApp | Native image/document upload |
+| Email | SMTP attachment |
+| Mattermost | Saved to disk, link in message |
+
+### Examples
+
+Ask the agent something like:
+
+- *"Show me revenue for last week as a bar chart"*
+- *"Create a PDF with an overview of all open orders"*
+- *"Export the customer list as an Excel file"*
+
+The agent will use the appropriate tool, generate the file, and send it back through the channel alongside its text response.
 
 ## Scheduler
 
@@ -462,6 +494,9 @@ All endpoints require authentication (session token) unless the system is in set
 │   │       ├── web-browse.ts       # Playwright web browsing
 │   │       ├── http-request.ts     # HTTP request tool
 │   │       ├── run-script.ts       # Script execution tool
+│   │       ├── generate-chart.ts   # Chart generation (PNG via Chart.js)
+│   │       ├── generate-pdf.ts     # PDF generation (PDFKit)
+│   │       ├── generate-excel.ts   # Excel generation (ExcelJS)
 │   │       └── types.ts            # Tool type definitions
 │   ├── auth/
 │   │   └── middleware.ts            # Session auth, rate limiting

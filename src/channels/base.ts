@@ -9,6 +9,13 @@ export interface IncomingMessage {
   chatTitle?: string;
 }
 
+export interface OutgoingFile {
+  filename: string;
+  mimeType: string;
+  data: Buffer;
+  caption?: string;
+}
+
 /**
  * Base class for all channel adapters.
  * Emits 'message' events when incoming messages arrive.
@@ -31,10 +38,31 @@ export abstract class ChannelAdapter extends EventEmitter {
   abstract sendMessage(externalChatId: string, text: string): Promise<void>;
 
   /**
+   * Send a file attachment through the channel.
+   * Default implementation saves to /tmp and sends a text link.
+   * Subclasses should override with native file sending where supported.
+   */
+  async sendFile(externalChatId: string, file: OutgoingFile): Promise<void> {
+    const fs = await import('fs');
+    const path = await import('path');
+    const tmpPath = path.join('/tmp', `lg-${Date.now()}-${file.filename}`);
+    fs.writeFileSync(tmpPath, file.data);
+    await this.sendMessage(
+      externalChatId,
+      `${file.caption || 'File generated'}: ${file.filename} (${Math.round(file.data.length / 1024)}KB)\nSaved to: ${tmpPath}`,
+    );
+  }
+
+  /**
    * Send an approval prompt with interactive buttons (if supported by channel).
    * Default implementation sends a plain text message with /approve and /reject commands.
    */
-  async sendApprovalPrompt(externalChatId: string, approvalId: string, toolName: string, riskLevel: string): Promise<void> {
+  async sendApprovalPrompt(
+    externalChatId: string,
+    approvalId: string,
+    toolName: string,
+    riskLevel: string,
+  ): Promise<void> {
     await this.sendMessage(
       externalChatId,
       `**Approval required** (${riskLevel}): \`${toolName}\`\n\n` +

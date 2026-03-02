@@ -3,6 +3,9 @@ import { webBrowseTool } from './web-browse';
 import { runScriptTool } from './run-script';
 import { httpRequestTool } from './http-request';
 import { capcutApiTool } from './capcut-api';
+import { generateChartTool } from './generate-chart';
+import { generatePdfTool } from './generate-pdf';
+import { generateExcelTool } from './generate-excel';
 import { delegateTaskTool, broadcastEventTool, queryAgentsTool } from '../a2a/tools';
 import { gitCloneTool, gitReadFileTool, gitWriteFileTool, gitCommitPushTool } from './git-repo';
 
@@ -15,6 +18,11 @@ export function registerBuiltinTools(): void {
   toolRegistry.register(runScriptTool);
   toolRegistry.register(httpRequestTool);
   toolRegistry.register(capcutApiTool);
+
+  // Multi-modal output tools (charts, PDFs, Excel)
+  toolRegistry.register(generateChartTool);
+  toolRegistry.register(generatePdfTool);
+  toolRegistry.register(generateExcelTool);
 
   // A2A tools
   toolRegistry.register(delegateTaskTool);
@@ -33,4 +41,4 @@ export function registerBuiltinTools(): void {
 }
 
 export { toolRegistry } from './registry';
-export type { AgentTool, ToolResult } from './types';
+export type { AgentTool, ToolResult, FileAttachment } from './types';
