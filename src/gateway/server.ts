@@ -12,6 +12,7 @@ import { a2aEvents } from '../agent/a2a';
 import { schedulerEvents, calendarEvents } from '../scheduler';
 import { skillWatcherEvents } from '../agent/skills';
 import { approvalEvents, notifyApprovalRequired, notifyApprovalResolved } from '../agent/hitl';
+import { WebWidgetAdapter } from '../channels/web-widget';
 
 export function createServer() {
   const app = express();
@@ -28,6 +29,52 @@ export function createServer() {
       return;
     }
     adapter.handleSlashCommand(req, res);
+  });
+
+  // Widget embed script (no auth required - served to external sites)
+  app.get('/widget/embed.js', (_req, res) => {
+    res.sendFile(path.join(__dirname, '..', '..', 'ui', 'widget.js'), {
+      headers: { 'Content-Type': 'application/javascript' },
+    });
+  });
+
+  // Widget config endpoint (no auth - needed by widget on external sites)
+  app.get('/widget/:channelId/config', (req, res) => {
+    const adapter = getChannelAdapter(req.params.channelId);
+    if (!adapter || !(adapter instanceof WebWidgetAdapter)) {
+      res.status(404).json({ error: 'Widget channel not found' });
+      return;
+    }
+    res.json({
+      title: adapter.config.title,
+      subtitle: adapter.config.subtitle,
+      primaryColor: adapter.config.primaryColor,
+      position: adapter.config.position,
+      welcomeMessage: adapter.config.welcomeMessage,
+      placeholder: adapter.config.placeholder,
+    });
+  });
+
+  // Widget WebSocket (no auth - for end users on external websites)
+  const wsApp2 = wsInstance.app;
+  wsApp2.ws('/widget/:channelId', (ws, req) => {
+    const channelId = req.params.channelId as string;
+    const adapter = getChannelAdapter(channelId);
+    if (!adapter || !(adapter instanceof WebWidgetAdapter)) {
+      ws.close(4004, 'Widget channel not found');
+      return;
+    }
+
+    // Check origin if allowedOrigins is configured
+    const origin = req.headers.origin as string | undefined;
+    if (!adapter.isOriginAllowed(origin)) {
+      ws.close(4003, 'Origin not allowed');
+      return;
+    }
+
+    // Resume existing session or start new
+    const sessionId = (req.query.sessionId as string) || undefined;
+    adapter.handleConnection(ws, sessionId);
   });
 
   // Rate limiting on API endpoints

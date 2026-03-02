@@ -4,13 +4,14 @@
 
 <h1 align="center">Loop Gateway</h1>
 
-<p align="center">An agentic AI loop gateway with multi-channel messaging support, container isolation, autonomous task execution, and a real-time web dashboard.</p>
+<p align="center">An agentic AI loop gateway with multi-channel messaging support, embeddable chat widget, container isolation, autonomous task execution, and a real-time web dashboard.</p>
 
-Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude AI and runs agent interactions through a managed pipeline with conversation tracking, token usage analytics, and optional OS-level container isolation.
+Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) and an embeddable website chat widget to Claude AI and runs agent interactions through a managed pipeline with conversation tracking, token usage analytics, and optional OS-level container isolation.
 
 ## Features
 
-- **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), and Email (IMAP/SMTP) adapters
+- **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), Email (IMAP/SMTP), and embeddable Web Chat Widget
+- **Embeddable Chat Widget** -- A single `<script>` tag to embed a chat bot on any website, connecting via WebSocket to the gateway
 - **Container Isolation** -- Run each agent call in an isolated Docker container (nanoclaw pattern: secrets via stdin, no network leaks)
 - **Loop Mode** -- Autonomous task execution with prompt files (ralph-wiggum pattern: plan/build loops)
 - **Agent Groups** -- Group agents with per-group system prompts, model selection, skills, budgets (daily/monthly token caps), and channel binding
@@ -71,7 +72,7 @@ npm run dev
 ```
 ┌──────────────────────────────────────────────────┐
 │  Messaging Channels                              │
-│  (Telegram, WhatsApp, Email)                     │
+│  (Telegram, WhatsApp, Email, Web Chat Widget)    │
 └──────────────┬───────────────────────────────────┘
                │
                ▼
@@ -399,6 +400,14 @@ All endpoints require authentication (session token) unless the system is in set
 | GET | `/api/tasks/:id/output` | Get task output |
 | DELETE | `/api/tasks/:id` | Delete a task |
 
+### Chat Widget
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/widget/embed.js` | Embeddable widget JavaScript (no auth) |
+| GET | `/widget/:channelId/config` | Get widget configuration (no auth) |
+| WS | `/widget/:channelId` | Widget WebSocket endpoint (no auth) |
+
 ### Other
 
 | Method | Endpoint | Description |
@@ -407,6 +416,70 @@ All endpoints require authentication (session token) unless the system is in set
 | GET | `/api/health` | Health check + uptime |
 
 ## Adding Channels
+
+### Web Chat Widget (Embeddable)
+
+Embed a chat bot directly on any website with a single `<script>` tag. Ideal for adding AI-powered chat to restaurant websites, landing pages, or customer portals.
+
+#### 1. Create a widget channel
+
+```bash
+curl -X POST http://localhost:3000/api/channels \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "type": "web-widget",
+    "name": "Website Chat",
+    "config": {
+      "title": "Chat with us",
+      "subtitle": "We typically reply instantly",
+      "primaryColor": "#6366f1",
+      "position": "bottom-right",
+      "welcomeMessage": "Hello! How can I help you today?",
+      "placeholder": "Type your message...",
+      "allowedOrigins": []
+    }
+  }'
+```
+
+The response includes the channel `id` which you need for the embed code.
+
+#### 2. Add the embed code to your website
+
+```html
+<script
+  src="https://your-gateway.com/widget/embed.js"
+  data-channel-id="CHANNEL_ID"
+  data-server="https://your-gateway.com">
+</script>
+```
+
+That's it -- a floating chat bubble will appear on your website. Visitors can click it to open a chat window that connects to your AI agent via WebSocket.
+
+#### Optional embed attributes
+
+| Attribute | Default | Description |
+|-----------|---------|-------------|
+| `data-channel-id` | *required* | The widget channel ID from step 1 |
+| `data-server` | *required* | Your Loop Gateway URL |
+| `data-position` | `bottom-right` | `bottom-right` or `bottom-left` |
+| `data-primary-color` | `#6366f1` | Brand color for the widget |
+| `data-title` | `Chat` | Header title |
+| `data-subtitle` | `Ask us anything` | Header subtitle |
+| `data-welcome` | *(from server)* | Welcome message shown on first open |
+| `data-placeholder` | `Type your message...` | Input placeholder text |
+
+#### Security: Allowed Origins
+
+To restrict which websites can connect to your widget, set `allowedOrigins` in the channel config:
+
+```json
+{
+  "allowedOrigins": ["https://myrestaurant.com", "https://www.myrestaurant.com"]
+}
+```
+
+When empty (default), connections from any origin are accepted.
 
 ### Telegram
 
@@ -470,7 +543,8 @@ All endpoints require authentication (session token) unless the system is in set
 │   │   ├── manager.ts              # Channel lifecycle + routing
 │   │   ├── telegram.ts             # Telegram adapter
 │   │   ├── whatsapp.ts             # WhatsApp adapter (Baileys)
-│   │   └── email.ts                # Email adapter (IMAP/SMTP)
+│   │   ├── email.ts                # Email adapter (IMAP/SMTP)
+│   │   └── web-widget.ts           # Embeddable chat widget adapter
 │   ├── db/
 │   │   └── sqlite.ts               # Database schema + queries
 │   ├── gateway/
@@ -490,7 +564,8 @@ All endpoints require authentication (session token) unless the system is in set
 ├── tests/
 │   └── hitl.test.ts                # HITL approval tests
 ├── ui/
-│   └── index.html                  # Single-page web dashboard
+│   ├── index.html                  # Single-page web dashboard
+│   └── widget.js                   # Embeddable chat widget script
 ├── docker-compose.yml
 ├── Dockerfile
 ├── system-prompt.md                # Default agent system prompt
