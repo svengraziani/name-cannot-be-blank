@@ -64,13 +64,6 @@ interface TimeContext {
 }
 
 /**
- * Get the current date/time in the configured timezone.
- */
-function getNow(): Date {
-  return new Date();
-}
-
-/**
  * Format a Date to the configured timezone, returning components.
  */
 function formatInTimezone(date: Date, timezone: string): { dateStr: string; timeStr: string; hour: number; minute: number; dayOfWeek: number } {
@@ -120,6 +113,18 @@ function getTimeOfDay(hour: number): 'morning' | 'midday' | 'afternoon' | 'eveni
 }
 
 /**
+ * Sanitize untrusted calendar text before injecting into the system prompt.
+ * Strips control characters, newlines, and markdown structural tokens to prevent prompt injection.
+ */
+function sanitizeCalendarText(value: string): string {
+  return value
+    .replace(/[\r\n`>#]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160);
+}
+
+/**
  * Check if a calendar event title looks like a holiday.
  */
 function isHolidayEvent(title: string): boolean {
@@ -129,26 +134,27 @@ function isHolidayEvent(title: string): boolean {
 
 /**
  * Get today's events from all calendar sources, split into holidays and regular events.
+ * Uses a 48-hour window to avoid missing events near timezone boundaries (e.g. midnight in UTC
+ * may still be "today" in the configured timezone).
  */
-function getTodayCalendarInfo(dateStr: string): { holidays: string[]; events: string[] } {
+function getTodayCalendarInfo(dateStr: string, timezone: string): { holidays: string[]; events: string[] } {
   const holidays: string[] = [];
   const events: string[] = [];
 
   try {
     const sources = getAllCalendarSources();
     for (const source of sources) {
-      // Get events for the next 24 hours (covers today)
-      const upcoming = getUpcomingEvents(source.id, 24 * 60);
+      // 48-hour window to handle timezone boundary edge cases (UTC vs local "today")
+      const upcoming = getUpcomingEvents(source.id, 48 * 60);
       for (const evt of upcoming) {
-        const evtDate = evt.startAt.split('T')[0];
-        // Only include events that start today
-        if (evtDate === dateStr || evt.startAt.startsWith(dateStr)) {
+        // Convert event time to the configured timezone before comparing/displaying
+        const evtLocal = formatInTimezone(new Date(evt.startAt), timezone);
+        if (evtLocal.dateStr === dateStr) {
+          const sanitized = sanitizeCalendarText(evt.title);
           if (isHolidayEvent(evt.title)) {
-            holidays.push(evt.title);
+            holidays.push(sanitized);
           } else {
-            const startTime = new Date(evt.startAt);
-            const time = `${String(startTime.getHours()).padStart(2, '0')}:${String(startTime.getMinutes()).padStart(2, '0')}`;
-            events.push(`${time} ${evt.title}`);
+            events.push(`${evtLocal.timeStr} ${sanitized}`);
           }
         }
       }
@@ -165,12 +171,11 @@ function getTodayCalendarInfo(dateStr: string): { holidays: string[]; events: st
  */
 export function getTimeContext(): TimeContext {
   const timezone = config.timeAwareness.timezone;
-  const now = getNow();
-  const { dateStr, timeStr, hour, dayOfWeek } = formatInTimezone(now, timezone);
+  const { dateStr, timeStr, hour, dayOfWeek } = formatInTimezone(new Date(), timezone);
 
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
   const timeOfDay = getTimeOfDay(hour);
-  const calInfo = getTodayCalendarInfo(dateStr);
+  const calInfo = getTodayCalendarInfo(dateStr, timezone);
 
   return {
     date: dateStr,
