@@ -166,6 +166,64 @@ export function getChannelStatuses(): Array<{
   });
 }
 
+/**
+ * Get health info for all channels.
+ */
+export function getAllChannelHealth(): Array<{
+  id: string;
+  type: string;
+  name: string;
+  enabled: boolean;
+  health: ReturnType<ChannelAdapter['getHealthInfo']>;
+}> {
+  const channels = getAllChannels();
+  return channels.map((ch) => {
+    const adapter = adapters.get(ch.id);
+    return {
+      id: ch.id,
+      type: ch.type,
+      name: ch.name,
+      enabled: ch.enabled === 1,
+      health: adapter
+        ? adapter.getHealthInfo()
+        : {
+            status: ch.enabled === 1 ? 'disconnected' : 'disabled',
+            connected: false,
+            details: {},
+          },
+    };
+  });
+}
+
+/**
+ * Get health info for a single channel.
+ */
+export function getChannelHealth(channelId: string): {
+  id: string;
+  type: string;
+  name: string;
+  enabled: boolean;
+  health: ReturnType<ChannelAdapter['getHealthInfo']>;
+} | null {
+  const channels = getAllChannels();
+  const ch = channels.find((c) => c.id === channelId);
+  if (!ch) return null;
+  const adapter = adapters.get(ch.id);
+  return {
+    id: ch.id,
+    type: ch.type,
+    name: ch.name,
+    enabled: ch.enabled === 1,
+    health: adapter
+      ? adapter.getHealthInfo()
+      : {
+          status: ch.enabled === 1 ? 'disconnected' : 'disabled',
+          connected: false,
+          details: {},
+        },
+  };
+}
+
 // --- Internal helpers ---
 
 async function startChannel(ch: ChannelRow): Promise<void> {

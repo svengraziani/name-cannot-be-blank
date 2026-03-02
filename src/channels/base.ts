@@ -48,6 +48,16 @@ export abstract class ChannelAdapter extends EventEmitter {
     return {};
   }
 
+  /** Return structured health info for the channel. Override for channel-specific details. */
+  getHealthInfo(): { status: string; connected: boolean; error?: string; details: Record<string, unknown> } {
+    return {
+      status: this.status,
+      connected: this.status === 'connected',
+      error: this.lastError,
+      details: this.getStatusInfo(),
+    };
+  }
+
   protected setStatus(status: 'disconnected' | 'connecting' | 'connected' | 'error', error?: string): void {
     this.status = status;
     this.lastError = error;

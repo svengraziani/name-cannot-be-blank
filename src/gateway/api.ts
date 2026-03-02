@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { createChannel, updateChannel, removeChannel, getChannelStatuses } from '../channels/manager';
+import { createChannel, updateChannel, removeChannel, getChannelStatuses, getAllChannelHealth, getChannelHealth } from '../channels/manager';
 import { getRecentRuns, getUsageSummary, getUsageDaily, getUsageByModel, getRecentApiCalls } from '../db/sqlite';
+import { openApiSpec, swaggerHtml } from './openapi';
 import {
   createAndStartTask,
   startTaskLoop,
@@ -850,11 +851,45 @@ export function createApiRouter(): Router {
   // ==================== Health ====================
 
   router.get('/health', (_req: Request, res: Response) => {
+    const channels = getAllChannelHealth();
+    const allConnected = channels.filter((c) => c.enabled).every((c) => c.health.connected);
+    const connectedCount = channels.filter((c) => c.health.connected).length;
+    const enabledCount = channels.filter((c) => c.enabled).length;
+
     res.json({
-      status: 'ok',
+      status: allConnected || enabledCount === 0 ? 'ok' : 'degraded',
       uptime: process.uptime(),
       containerMode: isContainerMode(),
+      channels: {
+        total: channels.length,
+        enabled: enabledCount,
+        connected: connectedCount,
+      },
     });
+  });
+
+  router.get('/health/channels', (_req: Request, res: Response) => {
+    res.json(getAllChannelHealth());
+  });
+
+  router.get('/health/channels/:id', (req: Request, res: Response) => {
+    const health = getChannelHealth(req.params.id as string);
+    if (!health) {
+      res.status(404).json({ error: 'Channel not found' });
+      return;
+    }
+    res.json(health);
+  });
+
+  // ==================== OpenAPI Spec ====================
+
+  router.get('/docs/openapi.json', (_req: Request, res: Response) => {
+    res.json(openApiSpec);
+  });
+
+  router.get('/docs', (_req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(swaggerHtml);
   });
 
   return router;

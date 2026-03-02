@@ -199,6 +199,18 @@ export class TelegramAdapter extends ChannelAdapter {
     });
   }
 
+  override getHealthInfo() {
+    return {
+      status: this.status,
+      connected: this.status === 'connected',
+      error: this.lastError,
+      details: {
+        botConnected: !!this.bot,
+        pollingActive: !!this.bot,
+      },
+    };
+  }
+
   async sendMessage(externalChatId: string, text: string): Promise<void> {
     if (!this.bot) throw new Error('Telegram bot not connected');
 

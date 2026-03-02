@@ -261,4 +261,18 @@ export class WhatsAppAdapter extends ChannelAdapter {
       reconnectAttempts: this.reconnectAttempts,
     };
   }
+
+  override getHealthInfo() {
+    return {
+      status: this.status,
+      connected: this.status === 'connected',
+      error: this.lastError,
+      details: {
+        qrCodeRequired: !!this._qrCode && this.status !== 'connected',
+        qrDataUrl: this._qrDataUrl,
+        reconnectAttempts: this.reconnectAttempts,
+        maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
+      },
+    };
+  }
 }
