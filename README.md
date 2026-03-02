@@ -17,6 +17,7 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 - **Agent-to-Agent (A2A) Protocol** -- Multi-agent coordination with message bus, sub-agent spawning, predefined roles, task delegation, and broadcasting
 - **Human-in-the-Loop (HITL)** -- Approval workflows with configurable risk levels per tool, auto-approve rules, timeouts, and real-time WebSocket notifications
 - **Skills System** -- Dynamic, file-based tool extensions. Built-in tools are exported as skills; custom skills can be uploaded, toggled, and hot-reloaded
+- **Auto-Skill-Discovery** -- The agent detects missing capabilities at runtime and suggests activating skills from the catalog. HITL approval ensures the user stays in control; approved skills are live-loaded without restart
 - **Built-in Agent Tools** -- Web browsing (Playwright), HTTP requests, script execution, and A2A tools (delegate, broadcast, query)
 - **Scheduler** -- Cron-based job scheduling with iCal calendar integration and output routing to channels or webhooks
 - **Usage Analytics** -- Per-call token tracking, cost estimation, daily/model breakdowns
@@ -97,8 +98,11 @@ npm run dev
 │  - web-browse      │ │  - Sub-agent spawning   │
 │  - http-request    │ │  - Task delegation      │
 │  - run-script      │ │  - Event broadcasting   │
-│  - Custom skills   │ │  - Agent querying       │
-└────────────────────┘ └─────────────────────────┘
+│  - suggest-skill   │ │  - Agent querying       │
+│  - Custom skills   │ └─────────────────────────┘
+│  - Skill Catalog   │
+│    (auto-discovery) │
+└────────────────────┘
                │
                ▼
 ┌──────────────────────────────────────────────────┐
@@ -222,6 +226,79 @@ curl -X POST http://localhost:3000/api/skills \
   }'
 ```
 
+## Auto-Skill-Discovery
+
+The agent can detect when it needs a tool that isn't currently loaded and suggest activating it from the **Skill Catalog**. This creates a human-in-the-loop approval flow -- the user decides whether to activate the skill. If approved, the skill is installed and live-loaded without restarting the gateway.
+
+### How it works
+
+```
+User: "Query my PostgreSQL database for all active users"
+
+Agent: (detects no database tool is available)
+       → calls suggest_skill tool
+       → "I need database access to answer this question.
+          Should I activate the PostgreSQL skill?"
+
+Dashboard/Channel: [Approve] [Reject]
+
+User: clicks [Approve]
+
+Agent: ✓ postgresql_query skill activated
+       → executes the database query
+       → returns results to user
+```
+
+### Built-in Catalog Skills
+
+The skill catalog ships with ready-to-install integrations:
+
+| Skill | Description | Required Env Vars |
+|-------|-------------|-------------------|
+| `postgresql_query` | SQL queries against PostgreSQL | `DATABASE_URL` |
+| `redis_command` | Redis commands (GET, SET, etc.) | `REDIS_URL` |
+| `mongodb_query` | MongoDB operations (find, insert, aggregate) | `MONGODB_URI` |
+| `slack_message` | Slack messaging and channel interaction | `SLACK_BOT_TOKEN` |
+| `s3_storage` | AWS S3 / object storage operations | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
+| `jira_issue` | Jira issue management and JQL search | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` |
+| `csv_processor` | CSV parsing, filtering, and aggregation | -- |
+| `docker_manage` | Docker container and image management | -- |
+
+### Manual Catalog Install (API)
+
+Skills from the catalog can also be installed directly via the API without going through the agent:
+
+```bash
+# Browse the catalog
+curl http://localhost:3000/api/skills/catalog \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Search the catalog
+curl "http://localhost:3000/api/skills/catalog/search?q=database" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Install a skill from the catalog
+curl -X POST http://localhost:3000/api/skills/catalog/postgresql_query/install \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# View pending discovery requests
+curl http://localhost:3000/api/skills/discovery/pending \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Approve a discovery request
+curl -X POST http://localhost:3000/api/skills/discovery/DISCOVERY_ID/approve \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### WebSocket Events
+
+Discovery events are broadcast via WebSocket for real-time dashboard updates:
+
+- `discovery:requested` -- Agent has requested a skill activation
+- `discovery:approved` -- User approved the activation
+- `discovery:rejected` -- User rejected the activation
+- `discovery:timeout` -- Approval request timed out (5 min default)
+
 ## Scheduler
 
 Schedule recurring or one-off jobs with cron expressions. Jobs execute agent prompts and route the output to channels or webhooks. iCal calendar sources can be synced and used as context for scheduled agent runs.
@@ -340,6 +417,18 @@ All endpoints require authentication (session token) unless the system is in set
 | DELETE | `/api/skills/:name` | Delete a custom skill |
 | POST | `/api/skills/:name/toggle` | Enable or disable a skill |
 
+### Skill Catalog & Auto-Discovery
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/skills/catalog` | List all catalog entries with install status |
+| GET | `/api/skills/catalog/available` | List catalog entries not yet installed |
+| GET | `/api/skills/catalog/search?q=...` | Search catalog by keyword |
+| POST | `/api/skills/catalog/:name/install` | Install a skill from the catalog |
+| GET | `/api/skills/discovery/pending` | List pending discovery approval requests |
+| POST | `/api/skills/discovery/:id/approve` | Approve a discovery request |
+| POST | `/api/skills/discovery/:id/reject` | Reject a discovery request |
+
 ### Tools
 
 | Method | Endpoint | Description |
@@ -456,12 +545,15 @@ All endpoints require authentication (session token) unless the system is in set
 │   │   │   ├── loader.ts           # Scan, load, install, toggle skills
 │   │   │   ├── schema.ts           # Skill manifest schema
 │   │   │   ├── watcher.ts          # File-system hot reload
-│   │   │   └── builtin-exporter.ts # Export built-in tools as skills
+│   │   │   ├── builtin-exporter.ts # Export built-in tools as skills
+│   │   │   ├── catalog.ts          # Skill catalog (known installable skills)
+│   │   │   └── discovery.ts        # Auto-Skill-Discovery manager (HITL + live load)
 │   │   └── tools/                  # Built-in agent tools
 │   │       ├── registry.ts         # Tool registry
 │   │       ├── web-browse.ts       # Playwright web browsing
 │   │       ├── http-request.ts     # HTTP request tool
 │   │       ├── run-script.ts       # Script execution tool
+│   │       ├── suggest-skill.ts    # Auto-discovery tool (suggest_skill)
 │   │       └── types.ts            # Tool type definitions
 │   ├── auth/
 │   │   └── middleware.ts            # Session auth, rate limiting

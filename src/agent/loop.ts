@@ -9,6 +9,7 @@ import { ResolvedAgentConfig } from './groups/resolver';
 import { setA2AContext } from './a2a';
 import { checkApprovalRequired, requestApproval } from './hitl';
 import { setGitContext } from './tools/git-repo';
+import { buildCatalogPromptSection } from './skills/discovery';
 
 export const agentEvents = new EventEmitter();
 
@@ -225,7 +226,10 @@ async function callAgentDirect(
 
   const model = overrideModel || config.agentModel;
   const maxTokens = overrideMaxTokens || config.agentMaxTokens;
-  const sysPrompt = overrideSystemPrompt || systemPrompt;
+  const baseSysPrompt = overrideSystemPrompt || systemPrompt;
+  // Append available skill catalog to system prompt so the agent can discover missing skills
+  const catalogSection = buildCatalogPromptSection();
+  const sysPrompt = catalogSection ? baseSysPrompt + catalogSection : baseSysPrompt;
   const client = getClient(overrideApiKey);
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {

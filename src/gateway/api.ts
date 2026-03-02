@@ -14,7 +14,20 @@ import { getContainerStats } from '../agent/container-runner';
 import { isContainerMode } from '../agent/loop';
 import { toolRegistry } from '../agent/tools';
 import { login, logout, setupAdmin, isSetupRequired } from '../auth/middleware';
-import { getAllSkills, toggleSkill, deleteSkill, installSkill, updateSkill } from '../agent/skills';
+import {
+  getAllSkills,
+  toggleSkill,
+  deleteSkill,
+  installSkill,
+  updateSkill,
+  getCatalog,
+  getCatalogEntry,
+  getAvailableCatalogEntries,
+  searchCatalog,
+  getPendingDiscoveries,
+  getPendingDiscoveryCount,
+  respondToDiscovery,
+} from '../agent/skills';
 import {
   createAgentGroup,
   getAllAgentGroups,
@@ -353,6 +366,123 @@ export function createApiRouter(): Router {
       }
       toggleSkill(req.params.name as string, enabled);
       res.json({ status: 'toggled', name: req.params.name, enabled });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== Skill Catalog & Discovery ====================
+
+  router.get('/skills/catalog', (_req: Request, res: Response) => {
+    try {
+      const installedNames = getAllSkills().map((s) => s.name);
+      const catalog = getCatalog().map((e) => ({
+        name: e.name,
+        displayName: e.displayName,
+        description: e.description,
+        tags: e.tags,
+        installed: installedNames.includes(e.name),
+        requiredEnvVars: e.requiredEnvVars,
+        setupHint: e.setupHint,
+      }));
+      res.json(catalog);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/skills/catalog/available', (_req: Request, res: Response) => {
+    try {
+      const installedNames = getAllSkills().map((s) => s.name);
+      const available = getAvailableCatalogEntries(installedNames).map((e) => ({
+        name: e.name,
+        displayName: e.displayName,
+        description: e.description,
+        tags: e.tags,
+        requiredEnvVars: e.requiredEnvVars,
+        setupHint: e.setupHint,
+      }));
+      res.json(available);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/skills/catalog/search', (req: Request, res: Response) => {
+    try {
+      const query = req.query.q as string;
+      if (!query) {
+        res.status(400).json({ error: 'Query parameter "q" is required' });
+        return;
+      }
+      const installedNames = getAllSkills().map((s) => s.name);
+      const results = searchCatalog(query, installedNames).map((e) => ({
+        name: e.name,
+        displayName: e.displayName,
+        description: e.description,
+        tags: e.tags,
+        requiredEnvVars: e.requiredEnvVars,
+        setupHint: e.setupHint,
+      }));
+      res.json(results);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/skills/catalog/:name/install', (req: Request, res: Response) => {
+    try {
+      const entry = getCatalogEntry(req.params.name as string);
+      if (!entry) {
+        res.status(404).json({ error: 'Skill not found in catalog' });
+        return;
+      }
+      installSkill(entry.manifest, entry.handlerSource);
+      res.json({ status: 'installed', name: entry.name, setupHint: entry.setupHint });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  });
+
+  router.get('/skills/discovery/pending', (_req: Request, res: Response) => {
+    try {
+      res.json({ pending: getPendingDiscoveries(), count: getPendingDiscoveryCount() });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/skills/discovery/:id/approve', (req: Request, res: Response) => {
+    try {
+      const respondedBy = (req as any).sessionUser?.username || 'admin';
+      const ok = respondToDiscovery(req.params.id as string, true, respondedBy);
+      if (!ok) {
+        res.status(404).json({ error: 'Discovery request not found or already resolved' });
+        return;
+      }
+      res.json({ status: 'approved', id: req.params.id });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/skills/discovery/:id/reject', (req: Request, res: Response) => {
+    try {
+      const { reason } = req.body || {};
+      const respondedBy = (req as any).sessionUser?.username || 'admin';
+      const ok = respondToDiscovery(req.params.id as string, false, respondedBy, reason);
+      if (!ok) {
+        res.status(404).json({ error: 'Discovery request not found or already resolved' });
+        return;
+      }
+      res.json({ status: 'rejected', id: req.params.id });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });
