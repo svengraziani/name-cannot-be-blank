@@ -9,6 +9,7 @@ import { ResolvedAgentConfig } from './groups/resolver';
 import { setA2AContext } from './a2a';
 import { checkApprovalRequired, requestApproval } from './hitl';
 import { setGitContext } from './tools/git-repo';
+import { getDefaultCircuitBreaker } from './resilience';
 
 export const agentEvents = new EventEmitter();
 
@@ -228,14 +229,20 @@ async function callAgentDirect(
   const sysPrompt = overrideSystemPrompt || systemPrompt;
   const client = getClient(overrideApiKey);
 
+  const breaker = getDefaultCircuitBreaker();
+
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
-    const response = await client.messages.create({
-      model,
-      max_tokens: maxTokens,
-      system: sysPrompt,
-      messages: currentMessages,
-      ...(tools.length > 0 ? { tools } : {}),
-    });
+    const response = await breaker.execute(
+      () =>
+        client.messages.create({
+          model,
+          max_tokens: maxTokens,
+          system: sysPrompt,
+          messages: currentMessages,
+          ...(tools.length > 0 ? { tools } : {}),
+        }),
+      `agent-direct[${model}]`,
+    );
 
     totalInputTokens += response.usage.input_tokens;
     totalOutputTokens += response.usage.output_tokens;
@@ -383,6 +390,10 @@ async function callAgentContainer(
     messages: simpleMessages,
   };
 
-  const result = await runInContainer(input);
+  const breaker = getDefaultCircuitBreaker();
+  const result = await breaker.execute(
+    () => runInContainer(input),
+    `agent-container[${input.model}]`,
+  );
   return { ...result, toolCalls: 0 };
 }
