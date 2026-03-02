@@ -389,6 +389,22 @@ export function getUpcomingEvents(calendarId: string, withinMinutes = 60): Calen
   ).map(rowToCalendarEvent);
 }
 
+export function getEventsInRange(calendarId: string, startIso: string, endIso: string): CalendarEvent[] {
+  return (
+    getDb()
+      .prepare(
+        `
+    SELECT * FROM calendar_events
+    WHERE calendar_id = ?
+      AND start_at >= ?
+      AND start_at < ?
+    ORDER BY start_at ASC
+  `,
+      )
+      .all(calendarId, startIso, endIso) as any[]
+  ).map(rowToCalendarEvent);
+}
+
 export function getCalendarEvents(calendarId: string, limit = 100): CalendarEvent[] {
   return (
     getDb()

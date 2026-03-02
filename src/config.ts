@@ -1,3 +1,16 @@
+const TIME_AWARENESS_TZ_DEFAULT = 'Europe/Vienna';
+
+function resolveTimeAwarenessTimezone(raw?: string): string {
+  const candidate = raw || TIME_AWARENESS_TZ_DEFAULT;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate });
+    return candidate;
+  } catch {
+    console.warn(`[config] Invalid TIME_AWARENESS_TIMEZONE="${candidate}", falling back to ${TIME_AWARENESS_TZ_DEFAULT}`);
+    return TIME_AWARENESS_TZ_DEFAULT;
+  }
+}
+
 export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   host: process.env.HOST || '0.0.0.0',
@@ -24,6 +37,11 @@ export const config = {
 
   github: {
     token: process.env.GITHUB_TOKEN || '',
+  },
+
+  timeAwareness: {
+    enabled: process.env.TIME_AWARENESS_ENABLED !== 'false', // enabled by default
+    timezone: resolveTimeAwarenessTimezone(process.env.TIME_AWARENESS_TIMEZONE),
   },
 
   email: {
