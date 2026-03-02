@@ -9,6 +9,8 @@ import { ResolvedAgentConfig } from './groups/resolver';
 import { setA2AContext } from './a2a';
 import { checkApprovalRequired, requestApproval } from './hitl';
 import { setGitContext } from './tools/git-repo';
+import { buildPersonaPrompt, resolveLanguage } from './groups/persona';
+import type { PersonaConfig } from './groups/types';
 
 export const agentEvents = new EventEmitter();
 
@@ -47,6 +49,17 @@ interface AgentResponse {
   inputTokens: number;
   outputTokens: number;
   toolCalls: number;
+}
+
+/** Returns true if the persona has any non-default settings worth applying. */
+function hasPersona(p: PersonaConfig): boolean {
+  return !!(p.personality || p.responseStyle || p.emojiUsage !== 'none' || p.language !== 'auto' || p.voiceEnabled);
+}
+
+export interface ProcessMessageResult {
+  content: string;
+  persona?: PersonaConfig;
+  detectedLanguage?: string;
 }
 
 // Maximum number of tool-use iterations per message to prevent runaway loops
@@ -93,7 +106,7 @@ export async function processMessage(
   sender: string,
   enabledTools?: string[],
   agentConfig?: ResolvedAgentConfig,
-): Promise<string> {
+): Promise<ProcessMessageResult> {
   // Store user message
   const msgId = addMessage(conversationId, 'user', userMessage, channelType, sender);
   const runId = createAgentRun(conversationId, msgId);
@@ -113,10 +126,21 @@ export async function processMessage(
     // Determine effective settings (group config or global defaults)
     const effectiveModel = agentConfig?.model || config.agentModel;
     const effectiveMaxTokens = agentConfig?.maxTokens || config.agentMaxTokens;
-    const effectiveSystemPrompt = agentConfig?.systemPrompt || systemPrompt;
+    let effectiveSystemPrompt = agentConfig?.systemPrompt || systemPrompt;
     const effectiveApiKey = agentConfig?.apiKey || config.anthropicApiKey;
     const effectiveTools = agentConfig?.enabledSkills || enabledTools;
     const useContainer = agentConfig?.containerMode ?? isContainerMode();
+
+    // Inject persona instructions into the system prompt
+    const persona = agentConfig?.persona;
+    let detectedLang: string | undefined;
+    if (persona && hasPersona(persona)) {
+      detectedLang = resolveLanguage(persona, userMessage);
+      const personaAddition = buildPersonaPrompt(persona, detectedLang);
+      if (personaAddition) {
+        effectiveSystemPrompt = effectiveSystemPrompt + personaAddition;
+      }
+    }
 
     // Set A2A context so delegate_task and other A2A tools work correctly
     setA2AContext({
@@ -191,7 +215,11 @@ export async function processMessage(
       containerMode: useContainer,
     });
 
-    return response.content;
+    return {
+      content: response.content,
+      persona,
+      detectedLanguage: detectedLang,
+    };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     updateAgentRun(runId, { status: 'error', error: errorMsg });
@@ -248,7 +276,9 @@ async function callAgentDirect(
       // If we hit the token limit mid-generation, the response is truncated.
       // Log a warning so we can diagnose, and append a note for the user.
       if (response.stop_reason === 'max_tokens') {
-        console.warn(`[agent] Response truncated at max_tokens (${maxTokens}) on iteration ${iteration}, tool calls so far: ${totalToolCalls}`);
+        console.warn(
+          `[agent] Response truncated at max_tokens (${maxTokens}) on iteration ${iteration}, tool calls so far: ${totalToolCalls}`,
+        );
         content += '\n\n(Response was cut short due to length limits. Please try a shorter or simpler request.)';
       }
 
@@ -326,7 +356,9 @@ async function callAgentDirect(
 
         const result = await toolRegistry.execute(block.name, toolInput);
 
-        console.log(`[agent] Tool result: ${result.isError ? 'ERROR' : 'OK'} (${result.content.length} chars)${result.isError ? ' — ' + result.content.slice(0, 500) : ''}`);
+        console.log(
+          `[agent] Tool result: ${result.isError ? 'ERROR' : 'OK'} (${result.content.length} chars)${result.isError ? ' — ' + result.content.slice(0, 500) : ''}`,
+        );
         agentEvents.emit('tool:result', {
           runId,
           iteration,

@@ -8,6 +8,7 @@
  */
 
 import { config } from '../../config';
+import type { PersonaConfig } from './types';
 import {
   getGroupForChannel,
   getAgentGroup,
@@ -27,6 +28,7 @@ export interface ResolvedAgentConfig {
   containerMode: boolean;
   githubRepo?: string;
   githubToken?: string;
+  persona?: PersonaConfig;
 }
 
 /**
@@ -58,6 +60,7 @@ export function resolveAgentConfig(channelId: string, defaultSystemPrompt: strin
     containerMode: group.containerMode,
     githubRepo: group.githubRepo || undefined,
     githubToken: getGroupGithubToken(group.id) || undefined,
+    persona: group.persona,
   };
 }
 
