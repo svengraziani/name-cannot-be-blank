@@ -4,6 +4,7 @@ import {
   readFileBuffer,
   readFileText,
   getRecentFiles,
+  getConversationFiles,
   extractFileContent,
   isImageMime,
   isTextExtractable,
@@ -37,10 +38,11 @@ export const processFileTool: AgentTool = {
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
     const action = input.action as string;
     const fileId = input.file_id as string | undefined;
+    const conversationId = input.conversation_id as string | undefined;
 
     switch (action) {
       case 'list': {
-        const files = getRecentFiles(20);
+        const files = conversationId ? getConversationFiles(conversationId).slice(0, 20) : getRecentFiles(20);
         if (files.length === 0) {
           return { content: 'No files found. Users can upload files via messaging channels or the API.' };
         }
@@ -76,6 +78,7 @@ export const processFileTool: AgentTool = {
 
       case 'read': {
         if (!fileId) return { content: 'file_id is required for read action', isError: true };
+        if (!getFile(fileId)) return { content: `File not found: ${fileId}`, isError: true };
         const content = extractFileContent(fileId);
         return { content };
       }
@@ -90,7 +93,14 @@ export const processFileTool: AgentTool = {
         if (isTextExtractable(record.mime_type)) {
           const textResult = readFileText(fileId);
           if (!textResult) return { content: 'Failed to read file', isError: true };
-          return { content: textResult.text };
+          const MAX_EXTRACTED_CHARS = 50_000;
+          const text = textResult.text;
+          return {
+            content:
+              text.length > MAX_EXTRACTED_CHARS
+                ? `${text.slice(0, MAX_EXTRACTED_CHARS)}\n...(truncated, ${text.length} chars total)`
+                : text,
+          };
         }
 
         if (record.mime_type === 'application/pdf') {

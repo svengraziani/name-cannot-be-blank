@@ -248,6 +248,10 @@ export class WhatsAppAdapter extends ChannelAdapter {
               }
             }
 
+            if (!text && attachments.length === 0) {
+              return;
+            }
+
             const incoming: IncomingMessage = {
               channelId: this.channelId,
               channelType: 'whatsapp',

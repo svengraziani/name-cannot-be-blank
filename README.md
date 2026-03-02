@@ -98,7 +98,7 @@ npm run dev
 │  - web-browse      │ │  - Sub-agent spawning   │
 │  - http-request    │ │  - Task delegation      │
 │  - run-script      │ │  - Event broadcasting   │
-│  - process-file    │ │  - Agent querying       │
+│  - process_file    │ │  - Agent querying       │
 │  - Custom skills   │ │                         │
 └────────┬───────────┘ └─────────────────────────┘
          │

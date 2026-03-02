@@ -77,7 +77,8 @@ function getFilesDir(): string {
 }
 
 /**
- * Validate and detect the MIME type. Returns null if not allowed.
+ * Validate the MIME type against the allowed list.
+ * Returns true if the MIME type is allowed, false otherwise.
  */
 export function validateMimeType(mimeType: string): boolean {
   return ALLOWED_MIME_TYPES.has(mimeType);
@@ -110,11 +111,22 @@ export function storeFile(
   const storagePath = path.join(dir, safeFilename);
   fs.writeFileSync(storagePath, buffer);
 
-  getDb()
-    .prepare(
-      'INSERT INTO file_attachments (id, conversation_id, channel_type, sender, filename, mime_type, size, storage_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    )
-    .run(id, conversationId || null, channelType || null, sender || null, filename, mimeType, buffer.length, storagePath);
+  try {
+    getDb()
+      .prepare(
+        'INSERT INTO file_attachments (id, conversation_id, channel_type, sender, filename, mime_type, size, storage_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(id, conversationId || null, channelType || null, sender || null, filename, mimeType, buffer.length, storagePath);
+  } catch (err) {
+    // Rollback file write if metadata insert fails to prevent orphaned files
+    try {
+      if (fs.existsSync(storagePath)) fs.unlinkSync(storagePath);
+      if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+    } catch {
+      // best-effort rollback
+    }
+    throw err;
+  }
 
   console.log(`[files] Stored file: ${filename} (${mimeType}, ${buffer.length} bytes) -> ${id}`);
 

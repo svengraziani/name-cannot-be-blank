@@ -858,6 +858,12 @@ export function createApiRouter(): Router {
 
   // ==================== Files ====================
 
+  /** Strip internal server path from FileRecord before sending to clients. */
+  const toPublicFile = (r: Record<string, unknown>) => {
+    const { storage_path: _storagePath, ...safe } = r;
+    return safe;
+  };
+
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
@@ -867,10 +873,11 @@ export function createApiRouter(): Router {
     try {
       const conversationId = req.query.conversation_id as string | undefined;
       if (conversationId) {
-        res.json(getConversationFiles(conversationId));
+        res.json(getConversationFiles(conversationId).map(toPublicFile));
       } else {
-        const limit = parseInt(req.query.limit as string) || 50;
-        res.json(getRecentFiles(limit));
+        const parsed = Number.parseInt(req.query.limit as string, 10);
+        const limit = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 200) : 50;
+        res.json(getRecentFiles(limit).map(toPublicFile));
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -910,7 +917,7 @@ export function createApiRouter(): Router {
         res.status(404).json({ error: 'File not found' });
         return;
       }
-      res.json(record);
+      res.json(toPublicFile(record as unknown as Record<string, unknown>));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });
@@ -924,8 +931,9 @@ export function createApiRouter(): Router {
         res.status(404).json({ error: 'File not found' });
         return;
       }
+      const safeFilename = result.record.filename.replace(/[\r\n"]/g, '_');
       res.setHeader('Content-Type', result.record.mime_type);
-      res.setHeader('Content-Disposition', `attachment; filename="${result.record.filename}"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
       res.setHeader('Content-Length', result.record.size);
       res.send(result.buffer);
     } catch (err) {

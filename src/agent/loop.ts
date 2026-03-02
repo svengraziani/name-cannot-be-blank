@@ -11,6 +11,13 @@ import { checkApprovalRequired, requestApproval } from './hitl';
 import { setGitContext } from './tools/git-repo';
 import { FileAttachment, isImageMime, readFileBuffer, extractFileContent } from '../files';
 
+const SUPPORTED_ANTHROPIC_IMAGE_MIME = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+]);
+
 export const agentEvents = new EventEmitter();
 
 let systemPrompt = 'You are a helpful AI assistant.';
@@ -120,8 +127,9 @@ export async function processMessage(
     }));
 
     // If the last message has image attachments, replace its content with
-    // multimodal content blocks for Claude vision
-    if (attachments && attachments.length > 0 && messages.length > 0) {
+    // multimodal content blocks for Claude vision.
+    // Skip this in container mode - the container serializer drops array content.
+    if (attachments && attachments.length > 0 && messages.length > 0 && !(agentConfig?.containerMode ?? isContainerMode())) {
       const lastMsg = messages[messages.length - 1]!;
       if (lastMsg.role === 'user') {
         const contentBlocks: Anthropic.ContentBlockParam[] = [];
@@ -129,6 +137,10 @@ export async function processMessage(
         // Add image blocks for image attachments
         for (const att of attachments) {
           if (isImageMime(att.mimeType)) {
+            if (!SUPPORTED_ANTHROPIC_IMAGE_MIME.has(att.mimeType)) {
+              console.warn(`[agent] Skipping unsupported Claude image MIME: ${att.mimeType}`);
+              continue;
+            }
             const fileData = readFileBuffer(att.id);
             if (fileData) {
               const mediaType = att.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';

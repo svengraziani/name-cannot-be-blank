@@ -342,7 +342,7 @@ async function handleConversationMessage(
       }
     }
 
-    // Update file attachments with conversation ID for tracking
+    // Log file attachment count
     if (msg.attachments && msg.attachments.length > 0) {
       console.log(`[manager] Message has ${msg.attachments.length} file attachment(s)`);
     }

@@ -74,22 +74,45 @@ function markdownToTelegramHtml(text: string): string {
   return result;
 }
 
+const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024; // 25MB
+const MAX_REDIRECTS = 5;
+const DOWNLOAD_TIMEOUT_MS = 15_000;
+
 /**
  * Download a file from a URL into a buffer.
+ * Enforces size limits, redirect limits, status code checks, and a timeout.
  */
-function downloadBuffer(url: string): Promise<Buffer> {
+function downloadBuffer(url: string, redirects = 0): Promise<Buffer> {
+  if (redirects > MAX_REDIRECTS) return Promise.reject(new Error('Too many redirects'));
   return new Promise((resolve, reject) => {
     const get = url.startsWith('https') ? https.get : http.get;
-    get(url, (res) => {
+    const req = get(url, (res) => {
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        downloadBuffer(res.headers.location).then(resolve, reject);
+        res.resume();
+        const nextUrl = new URL(res.headers.location, url).toString();
+        downloadBuffer(nextUrl, redirects + 1).then(resolve, reject);
+        return;
+      }
+      if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+        res.resume();
+        reject(new Error(`Download failed with HTTP ${res.statusCode ?? 'unknown'}`));
         return;
       }
       const chunks: Buffer[] = [];
-      res.on('data', (chunk) => chunks.push(chunk));
+      let total = 0;
+      res.on('data', (chunk: Buffer) => {
+        total += chunk.length;
+        if (total > MAX_DOWNLOAD_BYTES) {
+          req.destroy(new Error(`File exceeds ${MAX_DOWNLOAD_BYTES} bytes`));
+          return;
+        }
+        chunks.push(chunk);
+      });
       res.on('end', () => resolve(Buffer.concat(chunks)));
       res.on('error', reject);
-    }).on('error', reject);
+    });
+    req.setTimeout(DOWNLOAD_TIMEOUT_MS, () => req.destroy(new Error('Download timeout')));
+    req.on('error', reject);
   });
 }
 
@@ -122,12 +145,14 @@ export class TelegramAdapter extends ChannelAdapter {
         const text = msg.text || msg.caption || '';
         const attachments: FileAttachment[] = [];
 
+        const sender = msg.from?.username || msg.from?.first_name || userId;
+
         // Handle photo attachments
         if (msg.photo && msg.photo.length > 0) {
           try {
             // Get highest resolution photo
             const photo = msg.photo[msg.photo.length - 1]!;
-            const attachment = await this.downloadTelegramFile(photo.file_id, `photo_${photo.file_id}.jpg`, 'image/jpeg');
+            const attachment = await this.downloadTelegramFile(photo.file_id, `photo_${photo.file_id}.jpg`, 'image/jpeg', sender);
             if (attachment) attachments.push(attachment);
           } catch (err) {
             console.error(`[telegram:${this.channelId}] Failed to download photo:`, err);
@@ -139,7 +164,7 @@ export class TelegramAdapter extends ChannelAdapter {
           try {
             const mimeType = msg.document.mime_type || 'application/octet-stream';
             const filename = msg.document.file_name || `document_${msg.document.file_id}`;
-            const attachment = await this.downloadTelegramFile(msg.document.file_id, filename, mimeType);
+            const attachment = await this.downloadTelegramFile(msg.document.file_id, filename, mimeType, sender);
             if (attachment) attachments.push(attachment);
           } catch (err) {
             console.error(`[telegram:${this.channelId}] Failed to download document:`, err);
@@ -153,7 +178,7 @@ export class TelegramAdapter extends ChannelAdapter {
           channelId: this.channelId,
           channelType: 'telegram',
           externalChatId: String(msg.chat.id),
-          sender: msg.from?.username || msg.from?.first_name || userId,
+          sender,
           text: text || '(file attached)',
           chatTitle: msg.chat.title || msg.chat.first_name || undefined,
           attachments: attachments.length > 0 ? attachments : undefined,
@@ -313,6 +338,7 @@ export class TelegramAdapter extends ChannelAdapter {
     fileId: string,
     filename: string,
     mimeType: string,
+    sender?: string,
   ): Promise<FileAttachment | null> {
     if (!this.bot) return null;
 
@@ -324,6 +350,6 @@ export class TelegramAdapter extends ChannelAdapter {
     const fileUrl = await this.bot.getFileLink(fileId);
     const buffer = await downloadBuffer(fileUrl);
 
-    return storeFile(buffer, filename, mimeType, undefined, 'telegram');
+    return storeFile(buffer, filename, mimeType, undefined, 'telegram', sender);
   }
 }
