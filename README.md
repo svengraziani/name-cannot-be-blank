@@ -472,11 +472,13 @@ curl -X POST http://localhost:3000/webhook/incoming/CHANNEL_ID \
 ```
 
 **Async mode response** (immediate):
+
 ```json
 { "status": "accepted", "channelId": "...", "chatId": "conversation-1" }
 ```
 
 The agent response is then POSTed to your `callbackUrl`:
+
 ```json
 {
   "channelId": "...",
@@ -487,6 +489,7 @@ The agent response is then POSTed to your `callbackUrl`:
 ```
 
 **Sync mode response** (blocks until agent responds):
+
 ```json
 {
   "status": "ok",

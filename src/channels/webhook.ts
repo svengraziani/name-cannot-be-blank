@@ -1,4 +1,14 @@
+import { timingSafeEqual } from 'crypto';
 import { ChannelAdapter, IncomingMessage } from './base';
+
+function safeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    // Run a dummy compare to avoid leaking length via timing
+    timingSafeEqual(Buffer.from(a), Buffer.from(a));
+    return false;
+  }
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
 
 export interface WebhookConfig {
   /** Optional secret token for verifying inbound requests */
@@ -62,18 +72,31 @@ export class WebhookAdapter extends ChannelAdapter {
           headers['Authorization'] = `Bearer ${this.conf.secret}`;
         }
 
-        const res = await fetch(this.conf.callbackUrl, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+        let res: Response;
+        try {
+          res = await fetch(this.conf.callbackUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
         if (!res.ok) {
           const body = await res.text().catch(() => '');
           console.error(`[webhook:${this.channelId}] Callback failed: ${res.status} ${body}`);
         }
       } catch (err) {
-        console.error(`[webhook:${this.channelId}] Callback error:`, err);
+        if (err instanceof Error && err.name === 'AbortError') {
+          console.error(`[webhook:${this.channelId}] Callback timed out after 30s`);
+        } else {
+          console.error(`[webhook:${this.channelId}] Callback error:`, err);
+        }
       }
     } else {
       // Sync mode: resolve the pending response promise
@@ -100,7 +123,7 @@ export class WebhookAdapter extends ChannelAdapter {
     if (this.conf.secret) {
       const authHeader = (req.headers['authorization'] || req.headers['Authorization'] || '') as string;
       const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-      if (token !== this.conf.secret) {
+      if (!safeCompare(token, this.conf.secret)) {
         res.status(401).json({ error: 'Invalid or missing authorization token' });
         return;
       }
@@ -129,6 +152,12 @@ export class WebhookAdapter extends ChannelAdapter {
       res.json({ status: 'accepted', channelId: this.channelId, chatId });
       this.emit('message', incoming);
     } else {
+      // Sync mode: reject concurrent requests for the same chatId
+      if (this.pendingResponses.has(chatId)) {
+        res.status(409).json({ error: 'A sync request for this chatId is already in progress' });
+        return;
+      }
+
       // Sync mode: wait for agent response and return it inline
       const timeout = 120_000; // 2 minutes
       const timer = setTimeout(() => {
