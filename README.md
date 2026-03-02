@@ -10,6 +10,8 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 
 ## Features
 
+- **n8n / Make.com Integration** -- Ready-to-use n8n community nodes and Make.com blueprints. Drop "Loop Gateway" as a node into any workflow and connect AI agents to thousands of apps
+- **Webhook Platform** -- Token-authenticated inbound/outbound webhooks for triggering agent runs and receiving events from any automation platform
 - **Multi-Channel Messaging** -- Telegram, WhatsApp (via Baileys), and Email (IMAP/SMTP) adapters
 - **Container Isolation** -- Run each agent call in an isolated Docker container (nanoclaw pattern: secrets via stdin, no network leaks)
 - **Loop Mode** -- Autonomous task execution with prompt files (ralph-wiggum pattern: plan/build loops)
@@ -287,6 +289,150 @@ curl -X POST http://localhost:3000/api/tasks/1/stop \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
+## n8n Integration
+
+Loop Gateway ships with a ready-to-use **n8n community node package** (`n8n-nodes-loop-gateway`) that lets you drop AI agents directly into your n8n workflows.
+
+### Install the n8n Node
+
+```bash
+# In your n8n instance
+cd ~/.n8n
+npm install /path/to/loop-gateway/integrations/n8n
+# Or publish to npm and install: npm install n8n-nodes-loop-gateway
+```
+
+### Available Nodes
+
+| Node | Type | Description |
+|------|------|-------------|
+| **Loop Gateway** | Action | Run agents, create tasks, list groups, get usage stats |
+| **Loop Gateway Trigger** | Trigger | Start workflows when Loop Gateway events fire (agent runs, task completions, approvals) |
+
+### Quick Start: n8n + Loop Gateway
+
+1. **Create a webhook** in Loop Gateway:
+   ```bash
+   curl -X POST http://localhost:3000/api/webhooks \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -d '{"name": "n8n-workflow", "platform": "n8n", "events": ["*"]}'
+   ```
+2. **Add credentials** in n8n: Settings > Credentials > Loop Gateway API
+3. **Use the Loop Gateway node** in your workflow to send prompts and get AI responses
+4. **Use the Loop Gateway Trigger** to react to events (e.g. notify Slack when an agent finishes)
+
+### Example Workflows
+
+**AI Content Pipeline:**
+Schedule Trigger > Loop Gateway (Run Agent) > Google Sheets (Append Row)
+
+**Approval Notification:**
+Loop Gateway Trigger (approval:required) > Slack (Send Message) > Wait > Loop Gateway (Approve/Reject)
+
+**Multi-Agent Research:**
+Webhook Trigger > Loop Gateway (Create Task) > Wait > Loop Gateway (Get Task Status) > Email (Send)
+
+## Make.com Integration
+
+Ready-to-import Make.com scenario blueprints are included in `integrations/make/`.
+
+### Available Blueprints
+
+| Blueprint | Description |
+|-----------|-------------|
+| `run-agent.json` | Send a prompt to Loop Gateway and get an AI response |
+| `agent-to-google-sheets.json` | AI agent + Google Sheets pipeline |
+| `webhook-trigger.json` | Receive Loop Gateway events and route to Slack |
+
+### Setup
+
+1. Create a webhook in Loop Gateway (see above)
+2. In Make.com: Scenarios > Create > Import Blueprint
+3. Paste the JSON from `integrations/make/` and update the URL + token
+
+### Custom HTTP Module
+
+For custom scenarios, use the Make.com HTTP module:
+
+```
+POST https://your-gateway.com/webhook/invoke/YOUR_TOKEN
+Content-Type: application/json
+
+{"message": "Your prompt here", "sync": true}
+```
+
+## Webhooks
+
+Loop Gateway includes a full webhook platform for integrating with any external system. Webhooks support both inbound (trigger agent runs) and outbound (receive events) patterns.
+
+### Create a Webhook
+
+```bash
+curl -X POST http://localhost:3000/api/webhooks \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "name": "my-integration",
+    "platform": "generic",
+    "events": ["agent:run:complete", "task:complete"],
+    "targetUrl": "https://example.com/my-webhook-receiver"
+  }'
+```
+
+The response includes a `token` used for inbound triggers and a `targetUrl` for outbound events.
+
+### Inbound: Trigger an Agent Run
+
+```bash
+# Send a message to an AI agent (synchronous -- waits for response)
+curl -X POST http://localhost:3000/webhook/invoke/YOUR_WEBHOOK_TOKEN \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Summarize this article...", "sync": true}'
+
+# Create a loop task
+curl -X POST http://localhost:3000/webhook/task/YOUR_WEBHOOK_TOKEN \
+  -H "Content-Type: application/json" \
+  -d '{"name": "research", "prompt": "Research AI trends...", "maxIterations": 5}'
+```
+
+### Outbound: Receive Events
+
+When events occur, Loop Gateway POSTs to your `targetUrl`:
+
+```json
+{
+  "event": "agent:run:complete",
+  "payload": {
+    "runId": 42,
+    "conversationId": "...",
+    "inputTokens": 1500,
+    "outputTokens": 800,
+    "durationMs": 3200
+  },
+  "timestamp": "2025-01-15T10:30:00.000Z",
+  "source": "loop-gateway"
+}
+```
+
+### Supported Events
+
+| Event | Description |
+|-------|-------------|
+| `agent:run:start` | Agent run started |
+| `agent:run:complete` | Agent run finished successfully |
+| `agent:run:error` | Agent run failed |
+| `task:start` | Loop task started |
+| `task:complete` | Loop task finished |
+| `task:error` | Loop task failed |
+| `task:iteration` | Loop task completed an iteration |
+| `approval:required` | HITL approval requested |
+| `approval:resolved` | HITL approval approved/rejected |
+| `scheduler:job:complete` | Scheduled job finished |
+| `message:incoming` | New message received on a channel |
+| `message:reply` | Agent reply sent to a channel |
+| `*` | Subscribe to all events |
+
 ## API Reference
 
 All endpoints require authentication (session token) unless the system is in setup mode.
@@ -399,6 +545,26 @@ All endpoints require authentication (session token) unless the system is in set
 | GET | `/api/tasks/:id/output` | Get task output |
 | DELETE | `/api/tasks/:id` | Delete a task |
 
+### Webhooks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/webhooks` | List all registered webhooks |
+| POST | `/api/webhooks` | Create a new webhook (returns token) |
+| GET | `/api/webhooks/events` | List supported webhook events |
+| GET | `/api/webhooks/:id` | Get webhook details |
+| PUT | `/api/webhooks/:id` | Update a webhook |
+| DELETE | `/api/webhooks/:id` | Delete a webhook |
+| GET | `/api/webhooks/:id/logs` | Webhook delivery logs |
+
+### Webhook Inbound Endpoints (Token Auth)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/webhook/invoke/:token` | Trigger an agent run via webhook |
+| POST | `/webhook/task/:token` | Create a loop task via webhook |
+| GET | `/webhook/health/:token` | Validate webhook token |
+
 ### Other
 
 | Method | Endpoint | Description |
@@ -476,6 +642,12 @@ All endpoints require authentication (session token) unless the system is in set
 │   ├── gateway/
 │   │   ├── server.ts               # Express + WebSocket server
 │   │   └── api.ts                  # REST API routes
+│   ├── webhooks/                   # Webhook integration platform
+│   │   ├── types.ts                # Webhook type definitions
+│   │   ├── db.ts                   # Webhook persistence + logs
+│   │   ├── dispatcher.ts           # Outbound event dispatching
+│   │   ├── inbound.ts              # Inbound webhook handlers
+│   │   └── index.ts                # Public API
 │   └── scheduler/                  # Job scheduling system
 │       ├── engine.ts               # Cron scheduling engine
 │       ├── cron-builder.ts         # Trigger-to-cron conversion
@@ -483,6 +655,16 @@ All endpoints require authentication (session token) unless the system is in set
 │       ├── output-router.ts        # Route job output to channels/webhooks
 │       ├── db.ts                   # Job and calendar persistence
 │       └── types.ts                # Scheduler type definitions
+├── integrations/                   # External platform integrations
+│   ├── n8n/                        # n8n community node package
+│   │   ├── nodes/LoopGateway/      # Loop Gateway + Trigger nodes
+│   │   ├── credentials/            # n8n credential definitions
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   └── make/                       # Make.com scenario blueprints
+│       ├── run-agent.json          # Basic agent run blueprint
+│       ├── agent-to-google-sheets.json  # Agent + Sheets pipeline
+│       └── webhook-trigger.json    # Event-driven blueprint
 ├── agent-runner/                   # Isolated agent Docker image
 │   ├── Dockerfile
 │   ├── package.json

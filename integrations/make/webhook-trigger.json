@@ -1,0 +1,111 @@
+{
+  "name": "Loop Gateway – Webhook Trigger",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": {
+        "hook": "YOUR_MAKE_WEBHOOK_ID"
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": { "x": 0, "y": 0 },
+        "restore": {
+          "hook": {
+            "label": "Loop Gateway Events"
+          }
+        },
+        "parameters": [
+          {
+            "name": "hook",
+            "type": "hook:gateway-webhook",
+            "label": "Webhook",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "module": "builtin:BasicRouter",
+      "version": 1,
+      "mapper": null,
+      "metadata": {
+        "designer": { "x": 300, "y": 0 }
+      },
+      "routes": [
+        {
+          "flow": [
+            {
+              "id": 3,
+              "module": "slack:ActionPostMessage",
+              "version": 1,
+              "parameters": {},
+              "mapper": {
+                "channel": "YOUR_SLACK_CHANNEL",
+                "text": "Agent run completed: {{1.payload.conversationId}}\nTokens: {{1.payload.inputTokens}} in / {{1.payload.outputTokens}} out\nDuration: {{1.payload.durationMs}}ms"
+              },
+              "metadata": {
+                "designer": { "x": 600, "y": -100 }
+              },
+              "filter": {
+                "name": "Agent Completed",
+                "conditions": [
+                  [
+                    {
+                      "a": "{{1.event}}",
+                      "b": "agent:run:complete",
+                      "o": "text:equal"
+                    }
+                  ]
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "flow": [
+            {
+              "id": 4,
+              "module": "slack:ActionPostMessage",
+              "version": 1,
+              "parameters": {},
+              "mapper": {
+                "channel": "YOUR_SLACK_CHANNEL",
+                "text": "Approval needed for tool: {{1.payload.toolName}}\nRisk level: {{1.payload.riskLevel}}"
+              },
+              "metadata": {
+                "designer": { "x": 600, "y": 100 }
+              },
+              "filter": {
+                "name": "Approval Required",
+                "conditions": [
+                  [
+                    {
+                      "a": "{{1.event}}",
+                      "b": "approval:required",
+                      "o": "text:equal"
+                    }
+                  ]
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "version": 1,
+    "scenario": {
+      "roundtrips": 1,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "autoCommitTriggerLast": true
+    },
+    "designer": {
+      "orphans": []
+    }
+  }
+}

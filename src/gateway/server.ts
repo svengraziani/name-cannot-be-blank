@@ -12,10 +12,14 @@ import { a2aEvents } from '../agent/a2a';
 import { schedulerEvents, calendarEvents } from '../scheduler';
 import { skillWatcherEvents } from '../agent/skills';
 import { approvalEvents, notifyApprovalRequired, notifyApprovalResolved } from '../agent/hitl';
+import { createWebhookRouter, initWebhookSchema, dispatchWebhookEvent } from '../webhooks';
 
 export function createServer() {
   const app = express();
   const wsInstance = expressWs(app);
+
+  // Initialize webhook schema
+  initWebhookSchema();
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
@@ -29,6 +33,9 @@ export function createServer() {
     }
     adapter.handleSlashCommand(req, res);
   });
+
+  // Inbound webhooks for n8n / Make.com / generic (outside auth - token-based)
+  app.use('/webhook', createWebhookRouter());
 
   // Rate limiting on API endpoints
   app.use('/api', rateLimitMiddleware(120, 60));
@@ -122,6 +129,26 @@ export function createServer() {
     void notifyApprovalResolved(data);
   });
   approvalEvents.on('approval:timeout', (data) => broadcast('approval:timeout', data));
+
+  // ========== Outbound Webhook Dispatching ==========
+  // Forward key events to registered outbound webhooks (n8n, Make.com, etc.)
+
+  agentEvents.on('run:start', (data) => void dispatchWebhookEvent('agent:run:start', data, data?.groupId));
+  agentEvents.on('run:complete', (data) => void dispatchWebhookEvent('agent:run:complete', data, data?.groupId));
+  agentEvents.on('run:error', (data) => void dispatchWebhookEvent('agent:run:error', data, data?.groupId));
+
+  loopEvents.on('task:start', (data) => void dispatchWebhookEvent('task:start', data));
+  loopEvents.on('task:complete', (data) => void dispatchWebhookEvent('task:complete', data));
+  loopEvents.on('task:error', (data) => void dispatchWebhookEvent('task:error', data));
+  loopEvents.on('task:iteration', (data) => void dispatchWebhookEvent('task:iteration', data));
+
+  approvalEvents.on('approval:required', (data) => void dispatchWebhookEvent('approval:required', data));
+  approvalEvents.on('approval:resolved', (data) => void dispatchWebhookEvent('approval:resolved', data));
+
+  schedulerEvents.on('job:complete', (data) => void dispatchWebhookEvent('scheduler:job:complete', data));
+
+  channelManagerEvents.on('message:incoming', (data) => void dispatchWebhookEvent('message:incoming', data));
+  channelManagerEvents.on('message:reply', (data) => void dispatchWebhookEvent('message:reply', data));
 
   // Fallback: serve UI for any non-API route
   app.get('*', (_req, res) => {
