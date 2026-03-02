@@ -1,6 +1,21 @@
 import { Router, Request, Response } from 'express';
 import { createChannel, updateChannel, removeChannel, getChannelStatuses } from '../channels/manager';
-import { getRecentRuns, getUsageSummary, getUsageDaily, getUsageByModel, getRecentApiCalls } from '../db/sqlite';
+import {
+  getRecentRuns,
+  getUsageSummary,
+  getUsageDaily,
+  getUsageByModel,
+  getRecentApiCalls,
+  getConversationBranches,
+  getBranch,
+  createBranch,
+  setActiveBranch,
+  getActiveBranchId,
+  deleteBranch,
+  getBranchTree,
+  getBranchMessagesDetailed,
+  getConversation,
+} from '../db/sqlite';
 import {
   createAndStartTask,
   startTaskLoop,
@@ -838,6 +853,135 @@ export function createApiRouter(): Router {
       const deleted = deleteApprovalRule(req.params.toolName as string);
       if (!deleted) {
         res.status(404).json({ error: 'Rule not found' });
+        return;
+      }
+      res.json({ status: 'deleted' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== Conversations ====================
+
+  router.get('/conversations', (_req: Request, res: Response) => {
+    try {
+      const { getDb } = require('../db/sqlite');
+      const conversations = getDb()
+        .prepare(`
+          SELECT c.id, c.channel_id, c.external_id, c.title, c.active_branch_id, c.created_at, c.updated_at,
+                 COUNT(m.id) as message_count
+          FROM conversations c
+          LEFT JOIN messages m ON m.conversation_id = c.id
+          GROUP BY c.id
+          ORDER BY c.updated_at DESC
+          LIMIT 100
+        `)
+        .all();
+      res.json(conversations);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== Conversation Branching ====================
+
+  router.get('/conversations/:id/branches', (req: Request, res: Response) => {
+    try {
+      const conv = getConversation(req.params.id as string);
+      if (!conv) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+      const tree = getBranchTree(req.params.id as string);
+      const activeBranchId = getActiveBranchId(req.params.id as string);
+      res.json({ activeBranchId, branches: tree });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/conversations/:id/branches', (req: Request, res: Response) => {
+    try {
+      const conv = getConversation(req.params.id as string);
+      if (!conv) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+      const { parentBranchId, branchPointMessageId, name } = req.body;
+      if (!parentBranchId || !branchPointMessageId || !name) {
+        res.status(400).json({ error: 'parentBranchId, branchPointMessageId, and name are required' });
+        return;
+      }
+      const parentBranch = getBranch(parentBranchId);
+      if (!parentBranch || parentBranch.conversation_id !== req.params.id) {
+        res.status(400).json({ error: 'Invalid parent branch' });
+        return;
+      }
+      const branch = createBranch({
+        conversationId: req.params.id as string,
+        parentBranchId,
+        branchPointMessageId,
+        name,
+      });
+      res.json(branch);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.put('/conversations/:id/branches/:branchId/activate', (req: Request, res: Response) => {
+    try {
+      const conv = getConversation(req.params.id as string);
+      if (!conv) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+      const branch = getBranch(req.params.branchId as string);
+      if (!branch || branch.conversation_id !== req.params.id) {
+        res.status(404).json({ error: 'Branch not found' });
+        return;
+      }
+      setActiveBranch(req.params.id as string, req.params.branchId as string);
+      res.json({ status: 'activated', branchId: req.params.branchId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/conversations/:id/branches/:branchId/messages', (req: Request, res: Response) => {
+    try {
+      const branch = getBranch(req.params.branchId as string);
+      if (!branch || branch.conversation_id !== req.params.id) {
+        res.status(404).json({ error: 'Branch not found' });
+        return;
+      }
+      const messages = getBranchMessagesDetailed(req.params.branchId as string);
+      res.json(messages);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.delete('/conversations/:id/branches/:branchId', (req: Request, res: Response) => {
+    try {
+      const branch = getBranch(req.params.branchId as string);
+      if (!branch || branch.conversation_id !== req.params.id) {
+        res.status(404).json({ error: 'Branch not found' });
+        return;
+      }
+      if (!branch.parent_branch_id) {
+        res.status(400).json({ error: 'Cannot delete the root branch' });
+        return;
+      }
+      const deleted = deleteBranch(req.params.branchId as string);
+      if (!deleted) {
+        res.status(500).json({ error: 'Failed to delete branch' });
         return;
       }
       res.json({ status: 'deleted' });

@@ -21,8 +21,9 @@ Loop Gateway connects messaging platforms (Telegram, WhatsApp, Email) to Claude 
 - **Scheduler** -- Cron-based job scheduling with iCal calendar integration and output routing to channels or webhooks
 - **Usage Analytics** -- Per-call token tracking, cost estimation, daily/model breakdowns
 - **Auth & Rate Limiting** -- Session-based login, admin setup flow, IP-based rate limiting
-- **Real-time Dashboard** -- WebSocket-powered live activity feed, channel management, task monitoring
-- **SQLite Persistence** -- All data (messages, runs, usage, sessions, approvals, schedules) in a single portable database
+- **Conversation Branching** -- Git-style branching for conversations: rewind to any message and take an alternative path, with interactive tree visualization in the dashboard
+- **Real-time Dashboard** -- WebSocket-powered live activity feed, channel management, task monitoring, conversation branch explorer
+- **SQLite Persistence** -- All data (messages, runs, usage, sessions, approvals, schedules, branches) in a single portable database
 
 ## Quick Start
 
@@ -103,7 +104,7 @@ npm run dev
                ▼
 ┌──────────────────────────────────────────────────┐
 │  SQLite Database                                 │
-│  - Conversations, messages, agent runs           │
+│  - Conversations, messages, branches, agent runs │
 │  - API call log, usage analytics                 │
 │  - Users, sessions, rate limits                  │
 │  - Approvals, approval rules                     │
@@ -129,6 +130,7 @@ npm run dev
 │  - Scheduler & calendar management               │
 │  - Usage analytics                               │
 │  - Loop task management                          │
+│  - Conversation branch explorer & tree view      │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -287,6 +289,57 @@ curl -X POST http://localhost:3000/api/tasks/1/stop \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
+## Conversation Branching
+
+Conversation branching lets users rewind to any point in a conversation and explore alternative response paths -- similar to Git branches, but for AI conversations. Each conversation starts with a `main` branch. From any message, you can create a new branch that diverges from that point.
+
+### How it works
+
+1. Every new conversation automatically gets a `main` branch
+2. All messages are tagged with the active branch
+3. To explore an alternative path, create a new branch from any message
+4. Switch between branches to compare different conversation paths
+5. The agent always uses the active branch's message history for context
+
+### Via the Web UI
+
+1. Go to the **Branches** tab
+2. Select a conversation from the dropdown
+3. The branch tree is displayed as an interactive SVG visualization
+4. Click any node to view its messages
+5. Click **"Branch here"** on any message to create a new branch from that point
+6. Use **Activate** to switch the conversation to a different branch
+
+### Via the API
+
+```bash
+# List branches for a conversation (returns tree structure)
+curl http://localhost:3000/api/conversations/CONV_ID/branches \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Create a new branch (rewind & diverge)
+curl -X POST http://localhost:3000/api/conversations/CONV_ID/branches \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "parentBranchId": "PARENT_BRANCH_ID",
+    "branchPointMessageId": 42,
+    "name": "alternative-approach"
+  }'
+
+# Switch active branch
+curl -X PUT http://localhost:3000/api/conversations/CONV_ID/branches/BRANCH_ID/activate \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# View messages on a specific branch
+curl http://localhost:3000/api/conversations/CONV_ID/branches/BRANCH_ID/messages \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Delete a branch (cannot delete main)
+curl -X DELETE http://localhost:3000/api/conversations/CONV_ID/branches/BRANCH_ID \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
 ## API Reference
 
 All endpoints require authentication (session token) unless the system is in setup mode.
@@ -398,6 +451,17 @@ All endpoints require authentication (session token) unless the system is in set
 | GET | `/api/tasks/:id/prompt` | Get task prompt |
 | GET | `/api/tasks/:id/output` | Get task output |
 | DELETE | `/api/tasks/:id` | Delete a task |
+
+### Conversations & Branching
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/conversations` | List all conversations |
+| GET | `/api/conversations/:id/branches` | Get branch tree for a conversation |
+| POST | `/api/conversations/:id/branches` | Create a new branch (rewind & diverge) |
+| PUT | `/api/conversations/:id/branches/:branchId/activate` | Switch active branch |
+| GET | `/api/conversations/:id/branches/:branchId/messages` | Get messages on a branch |
+| DELETE | `/api/conversations/:id/branches/:branchId` | Delete a branch |
 
 ### Other
 

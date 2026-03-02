@@ -131,6 +131,26 @@
     .usage-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .usage-table th { text-align: left; padding: 8px; color: var(--text2); border-bottom: 1px solid var(--border); font-weight: 500; }
     .usage-table td { padding: 8px; border-bottom: 1px solid var(--border); }
+
+    /* Branch tree */
+    .branch-tree { position: relative; padding: 20px 0; }
+    .branch-tree svg { display: block; }
+    .branch-node { cursor: pointer; transition: opacity 0.2s; }
+    .branch-node:hover { opacity: 0.85; }
+    .branch-node-rect { rx: 8; ry: 8; stroke-width: 2; }
+    .branch-node-active .branch-node-rect { stroke: var(--accent); stroke-dasharray: none; }
+    .branch-edge { fill: none; stroke: var(--border); stroke-width: 2; }
+    .branch-select { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 8px 12px; font-size: 13px; }
+    .branch-messages { max-height: 400px; overflow-y: auto; }
+    .branch-msg { padding: 10px 14px; margin-bottom: 8px; border-radius: 8px; font-size: 13px; line-height: 1.5; }
+    .branch-msg.user { background: var(--bg3); border: 1px solid var(--border); }
+    .branch-msg.assistant { background: rgba(108,99,255,0.08); border: 1px solid rgba(108,99,255,0.2); }
+    .branch-msg .msg-role { font-size: 11px; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; color: var(--text2); }
+    .branch-msg.assistant .msg-role { color: var(--accent); }
+    .branch-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .branch-badge.active { background: rgba(108,99,255,0.18); color: var(--accent); }
+    .branch-badge.inactive { background: rgba(139,143,163,0.18); color: var(--text2); }
+    .branch-badge.main { background: rgba(74,222,128,0.18); color: var(--green); }
   </style>
 </head>
 <body>
@@ -174,6 +194,7 @@
       <div class="tab" onclick="switchTab('approvals')">Approvals</div>
       <div class="tab" onclick="switchTab('usage')">Usage</div>
       <div class="tab" onclick="switchTab('tasks')">Loop Tasks</div>
+      <div class="tab" onclick="switchTab('branches')">Branches</div>
     </div>
 
     <!-- ===== DASHBOARD TAB ===== -->
@@ -360,6 +381,40 @@
           </div>
           <p style="color:var(--text2);font-size:13px;margin-bottom:16px;">Autonomous tasks run in a loop: read prompt, run agent, write output, repeat until complete.</p>
           <div id="taskList"><div class="empty-state"><p>No loop tasks yet.</p><button class="btn primary" onclick="openAddTask()">Create your first task</button></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== BRANCHES TAB ===== -->
+    <div class="tab-content" id="tab-branches">
+      <div class="container">
+        <div class="card full" style="margin-bottom:20px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h2 style="margin:0;">Conversation Branching</h2>
+          </div>
+          <p style="color:var(--text2);font-size:13px;margin-bottom:16px;">Rewind to any point in a conversation and take an alternative path. Like Git branches, but for conversations.</p>
+          <div class="form-group" style="margin-bottom:16px;">
+            <label>Select Conversation</label>
+            <select class="branch-select" id="branchConvSelect" onchange="loadBranchTree(this.value)" style="width:100%;">
+              <option value="">-- Select a conversation --</option>
+            </select>
+          </div>
+          <div id="branchTreeContainer" style="display:none;">
+            <div style="display:flex;gap:20px;flex-wrap:wrap;">
+              <div style="flex:1;min-width:320px;">
+                <h2 style="margin-bottom:12px;">Branch Tree</h2>
+                <div id="branchTreeSvg" class="branch-tree" style="background:var(--bg);border-radius:12px;border:1px solid var(--border);padding:16px;min-height:200px;overflow:auto;"></div>
+              </div>
+              <div style="flex:1;min-width:320px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                  <h2 style="margin:0;" id="branchMsgTitle">Messages</h2>
+                  <div id="branchActions" style="display:flex;gap:8px;"></div>
+                </div>
+                <div id="branchMessages" class="branch-messages" style="background:var(--bg);border-radius:12px;border:1px solid var(--border);padding:16px;min-height:200px;"></div>
+              </div>
+            </div>
+          </div>
+          <div id="branchEmptyState" class="empty-state"><p>Select a conversation to view its branch tree.</p></div>
         </div>
       </div>
     </div>
@@ -611,6 +666,7 @@
       if (name === 'skills') refreshSkills();
       if (name === 'scheduler') refreshScheduler();
       if (name === 'approvals') refreshApprovals();
+      if (name === 'branches') refreshBranchConversations();
     }
 
     // === WebSocket ===
@@ -1342,6 +1398,232 @@
 
     function statusColor(status) {
       return { pending: 'var(--yellow)', approved: 'var(--green)', rejected: 'var(--red)', timeout: 'var(--orange)', auto_approved: 'var(--blue)' }[status] || 'var(--text2)';
+    }
+
+    // === Conversation Branching ===
+    let branchData = { activeBranchId: null, branches: [] };
+    let selectedBranchId = null;
+    let currentBranchConvId = null;
+
+    async function refreshBranchConversations() {
+      try {
+        const res = await apiFetch('/api/conversations');
+        const conversations = await res.json();
+        const select = document.getElementById('branchConvSelect');
+        const current = select.value;
+        select.innerHTML = '<option value="">-- Select a conversation --</option>';
+        conversations.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = `${c.title || c.external_id} (${c.message_count} msgs)`;
+          select.appendChild(opt);
+        });
+        if (current) { select.value = current; }
+      } catch {}
+    }
+
+    async function loadBranchTree(convId) {
+      if (!convId) {
+        document.getElementById('branchTreeContainer').style.display = 'none';
+        document.getElementById('branchEmptyState').style.display = 'block';
+        return;
+      }
+      currentBranchConvId = convId;
+      try {
+        const res = await apiFetch(`/api/conversations/${convId}/branches`);
+        branchData = await res.json();
+        document.getElementById('branchTreeContainer').style.display = 'block';
+        document.getElementById('branchEmptyState').style.display = 'none';
+        renderBranchTree();
+        // Auto-select active branch
+        if (branchData.activeBranchId) {
+          selectBranch(branchData.activeBranchId);
+        }
+      } catch (e) {
+        document.getElementById('branchEmptyState').innerHTML = '<p style="color:var(--red);">Error loading branches.</p>';
+        document.getElementById('branchEmptyState').style.display = 'block';
+        document.getElementById('branchTreeContainer').style.display = 'none';
+      }
+    }
+
+    function renderBranchTree() {
+      const container = document.getElementById('branchTreeSvg');
+      const branches = branchData.branches || [];
+      if (!branches.length) {
+        container.innerHTML = '<div class="empty-state" style="padding:20px;"><p>No branches yet.</p></div>';
+        return;
+      }
+
+      // Build tree structure
+      const nodeMap = {};
+      branches.forEach(b => { nodeMap[b.branch.id] = { ...b, children: [] }; });
+      const roots = [];
+      branches.forEach(b => {
+        if (b.branch.parent_branch_id && nodeMap[b.branch.parent_branch_id]) {
+          nodeMap[b.branch.parent_branch_id].children.push(nodeMap[b.branch.id]);
+        } else {
+          roots.push(nodeMap[b.branch.id]);
+        }
+      });
+
+      // Layout: assign x, y positions
+      const nodeW = 180, nodeH = 56, gapX = 30, gapY = 80;
+      let xOffset = 0;
+
+      function layoutNode(node, depth) {
+        node.y = depth * (nodeH + gapY);
+        if (node.children.length === 0) {
+          node.x = xOffset;
+          xOffset += nodeW + gapX;
+        } else {
+          node.children.forEach(c => layoutNode(c, depth + 1));
+          const firstX = node.children[0].x;
+          const lastX = node.children[node.children.length - 1].x;
+          node.x = (firstX + lastX) / 2;
+        }
+      }
+      roots.forEach(r => layoutNode(r, 0));
+
+      const allNodes = Object.values(nodeMap);
+      const maxX = Math.max(...allNodes.map(n => n.x)) + nodeW + 40;
+      const maxY = Math.max(...allNodes.map(n => n.y)) + nodeH + 40;
+
+      // Render SVG
+      let svg = `<svg width="${maxX}" height="${maxY}" viewBox="0 0 ${maxX} ${maxY}" xmlns="http://www.w3.org/2000/svg">`;
+
+      // Draw edges
+      allNodes.forEach(node => {
+        if (node.branch.parent_branch_id && nodeMap[node.branch.parent_branch_id]) {
+          const parent = nodeMap[node.branch.parent_branch_id];
+          const x1 = parent.x + nodeW / 2, y1 = parent.y + nodeH;
+          const x2 = node.x + nodeW / 2, y2 = node.y;
+          const midY = (y1 + y2) / 2;
+          svg += `<path class="branch-edge" d="M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}" />`;
+        }
+      });
+
+      // Draw nodes
+      allNodes.forEach(node => {
+        const isActive = node.branch.id === branchData.activeBranchId;
+        const isSelected = node.branch.id === selectedBranchId;
+        const isMain = !node.branch.parent_branch_id;
+        const fillColor = isSelected ? 'rgba(108,99,255,0.15)' : 'var(--bg2)';
+        const strokeColor = isActive ? 'var(--accent)' : isMain ? 'var(--green)' : 'var(--border)';
+        const strokeW = isActive || isSelected ? 2.5 : 1.5;
+
+        svg += `<g class="branch-node ${isActive ? 'branch-node-active' : ''}" onclick="selectBranch('${node.branch.id}')" transform="translate(${node.x + 20},${node.y + 20})">`;
+        svg += `<rect class="branch-node-rect" width="${nodeW}" height="${nodeH}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${strokeW}" />`;
+        svg += `<text x="${nodeW/2}" y="20" text-anchor="middle" fill="var(--text)" font-size="13" font-weight="600">${escHtml(node.branch.name)}</text>`;
+        svg += `<text x="${nodeW/2}" y="38" text-anchor="middle" fill="var(--text2)" font-size="11">${node.messageCount} msg${node.messageCount !== 1 ? 's' : ''}${isActive ? ' (active)' : ''}</text>`;
+        svg += `</g>`;
+      });
+
+      svg += `</svg>`;
+      container.innerHTML = svg;
+    }
+
+    async function selectBranch(branchId) {
+      selectedBranchId = branchId;
+      renderBranchTree(); // re-render to highlight
+      // Load messages
+      const msgEl = document.getElementById('branchMessages');
+      const titleEl = document.getElementById('branchMsgTitle');
+      const actionsEl = document.getElementById('branchActions');
+      const branch = branchData.branches.find(b => b.branch.id === branchId);
+      if (!branch) return;
+
+      const isActive = branchId === branchData.activeBranchId;
+      const isMain = !branch.branch.parent_branch_id;
+
+      titleEl.textContent = `Messages: ${branch.branch.name}`;
+
+      // Action buttons
+      let actionsHtml = '';
+      if (!isActive) {
+        actionsHtml += `<button class="btn sm primary" onclick="activateBranch('${branchId}')">Activate</button>`;
+      }
+      if (!isMain) {
+        actionsHtml += `<button class="btn sm danger" onclick="removeBranch('${branchId}')">Delete</button>`;
+      }
+      actionsHtml += `<button class="btn sm" onclick="openNewBranchModal('${branchId}')">+ Branch</button>`;
+      actionsEl.innerHTML = actionsHtml;
+
+      try {
+        const res = await apiFetch(`/api/conversations/${currentBranchConvId}/branches/${branchId}/messages`);
+        const messages = await res.json();
+        if (!messages.length) {
+          msgEl.innerHTML = '<div class="empty-state" style="padding:20px;"><p>No messages on this branch yet.</p></div>';
+          return;
+        }
+        msgEl.innerHTML = messages.map(m => `
+          <div class="branch-msg ${m.role}" data-msg-id="${m.id}">
+            <div class="msg-role">${m.role}</div>
+            <div>${escHtml(m.content).substring(0, 500)}${m.content.length > 500 ? '...' : ''}</div>
+            <div style="margin-top:6px;font-size:11px;color:var(--text2);display:flex;justify-content:space-between;align-items:center;">
+              <span>${new Date(m.created_at).toLocaleString('de-DE')}</span>
+              <button class="btn sm" onclick="openNewBranchModal('${branchId}', ${m.id})" title="Branch from this message" style="padding:2px 6px;font-size:10px;">Branch here</button>
+            </div>
+          </div>
+        `).join('');
+      } catch {
+        msgEl.innerHTML = '<div class="empty-state" style="padding:20px;"><p style="color:var(--red);">Error loading messages.</p></div>';
+      }
+    }
+
+    async function activateBranch(branchId) {
+      try {
+        await apiFetch(`/api/conversations/${currentBranchConvId}/branches/${branchId}/activate`, { method: 'PUT' });
+        await loadBranchTree(currentBranchConvId);
+        selectBranch(branchId);
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function removeBranch(branchId) {
+      const branch = branchData.branches.find(b => b.branch.id === branchId);
+      if (!confirm(`Delete branch "${branch?.branch.name}"? All messages on this branch will be lost.`)) return;
+      try {
+        await apiFetch(`/api/conversations/${currentBranchConvId}/branches/${branchId}`, { method: 'DELETE' });
+        selectedBranchId = null;
+        await loadBranchTree(currentBranchConvId);
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    function openNewBranchModal(parentBranchId, messageId) {
+      const name = prompt('Branch name:', `branch-${Date.now().toString(36)}`);
+      if (!name) return;
+      // If no messageId, use the last message of the parent branch
+      if (!messageId) {
+        const parent = branchData.branches.find(b => b.branch.id === parentBranchId);
+        if (parent && parent.messageCount > 0) {
+          // We need to fetch messages to get the last ID; use a fallback
+          createNewBranchWithFetch(parentBranchId, name);
+          return;
+        }
+        alert('Cannot branch from an empty branch.');
+        return;
+      }
+      createNewBranch(parentBranchId, messageId, name);
+    }
+
+    async function createNewBranchWithFetch(parentBranchId, name) {
+      try {
+        const res = await apiFetch(`/api/conversations/${currentBranchConvId}/branches/${parentBranchId}/messages`);
+        const msgs = await res.json();
+        if (!msgs.length) { alert('Cannot branch from an empty branch.'); return; }
+        const lastMsgId = msgs[msgs.length - 1].id;
+        await createNewBranch(parentBranchId, lastMsgId, name);
+      } catch (e) { alert('Error: ' + e.message); }
+    }
+
+    async function createNewBranch(parentBranchId, messageId, name) {
+      try {
+        await apiFetch(`/api/conversations/${currentBranchConvId}/branches`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parentBranchId, branchPointMessageId: messageId, name })
+        });
+        await loadBranchTree(currentBranchConvId);
+      } catch (e) { alert('Error: ' + e.message); }
     }
 
     // === Util ===
