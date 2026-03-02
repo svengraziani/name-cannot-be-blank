@@ -24,3 +24,5 @@ export {
   getGroupTokenUsageMonth,
   getGroupGithubToken,
 } from './manager';
+export type { AgentGroupTemplate } from './templates';
+export { getAllTemplates, getTemplate } from './templates';
