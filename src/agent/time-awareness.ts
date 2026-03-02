@@ -10,7 +10,7 @@
  */
 
 import { config } from '../config';
-import { getAllCalendarSources, getUpcomingEvents } from '../scheduler/db';
+import { getAllCalendarSources, getEventsInRange } from '../scheduler/db';
 
 // Day names in German (index 0 = Sunday)
 const GERMAN_DAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
@@ -115,13 +115,20 @@ function getTimeOfDay(hour: number): 'morning' | 'midday' | 'afternoon' | 'eveni
 /**
  * Sanitize untrusted calendar text before injecting into the system prompt.
  * Strips control characters, newlines, and markdown structural tokens to prevent prompt injection.
+ * Redacts titles containing instruction-like keywords to prevent semantic prompt injection.
  */
 function sanitizeCalendarText(value: string): string {
-  return value
+  const cleaned = value
+    .normalize('NFKC')
     .replace(/[\r\n`>#]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 160);
+    .slice(0, 120);
+
+  if (/\b(system|assistant|developer|ignore|instruction|follow these rules|role:)\b/i.test(cleaned)) {
+    return '[redacted calendar title]';
+  }
+  return cleaned;
 }
 
 /**
@@ -134,19 +141,28 @@ function isHolidayEvent(title: string): boolean {
 
 /**
  * Get today's events from all calendar sources, split into holidays and regular events.
- * Uses a 48-hour window to avoid missing events near timezone boundaries (e.g. midnight in UTC
- * may still be "today" in the configured timezone).
+ * Queries a UTC range spanning yesterday–tomorrow to ensure "today" events are captured
+ * regardless of timezone offset (avoids missing events already in the past relative to UTC).
  */
 function getTodayCalendarInfo(dateStr: string, timezone: string): { holidays: string[]; events: string[] } {
   const holidays: string[] = [];
   const events: string[] = [];
 
+  // Compute a UTC range that fully covers "today" in the configured timezone.
+  // We use yesterday 00:00 UTC → tomorrow+1 00:00 UTC as a safe margin.
+  const now = new Date();
+  const rangeStart = new Date(now);
+  rangeStart.setUTCDate(rangeStart.getUTCDate() - 1);
+  rangeStart.setUTCHours(0, 0, 0, 0);
+  const rangeEnd = new Date(now);
+  rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 2);
+  rangeEnd.setUTCHours(0, 0, 0, 0);
+
   try {
     const sources = getAllCalendarSources();
     for (const source of sources) {
-      // 48-hour window to handle timezone boundary edge cases (UTC vs local "today")
-      const upcoming = getUpcomingEvents(source.id, 48 * 60);
-      for (const evt of upcoming) {
+      const eventsInRange = getEventsInRange(source.id, rangeStart.toISOString(), rangeEnd.toISOString());
+      for (const evt of eventsInRange) {
         // Convert event time to the configured timezone before comparing/displaying
         const evtLocal = formatInTimezone(new Date(evt.startAt), timezone);
         if (evtLocal.dateStr === dateStr) {
@@ -159,8 +175,8 @@ function getTodayCalendarInfo(dateStr: string, timezone: string): { holidays: st
         }
       }
     }
-  } catch {
-    // Calendar may not be available - that's fine
+  } catch (err) {
+    console.warn('[time-awareness] Failed to load calendar info:', err);
   }
 
   return { holidays, events };
