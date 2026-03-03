@@ -16,6 +16,7 @@ import {
   getGroupTokenUsageToday,
   getGroupTokenUsageMonth,
 } from './manager';
+import { getMcpToolNamesForGroup } from '../mcp/db';
 
 export interface ResolvedAgentConfig {
   systemPrompt: string;
@@ -48,12 +49,19 @@ export function resolveAgentConfig(channelId: string, defaultSystemPrompt: strin
     };
   }
 
+  // Merge group skills with MCP tools from assigned MCP servers
+  const mcpToolNames = getMcpToolNamesForGroup(group.id);
+  let enabledSkills: string[] | undefined;
+  if (group.skills.length > 0 || mcpToolNames.length > 0) {
+    enabledSkills = [...group.skills, ...mcpToolNames];
+  }
+
   return {
     systemPrompt: group.systemPrompt,
     model: group.model,
     maxTokens: group.maxTokens,
     apiKey: getGroupApiKey(group.id),
-    enabledSkills: group.skills.length > 0 ? group.skills : undefined,
+    enabledSkills,
     groupId: group.id,
     containerMode: group.containerMode,
     githubRepo: group.githubRepo || undefined,
