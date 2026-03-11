@@ -65,6 +65,20 @@ import {
   stopCalendarPoll,
   formatTriggerDescription,
 } from '../scheduler';
+import {
+  createWorkflow,
+  getWorkflow,
+  getAllWorkflows,
+  updateWorkflow,
+  deleteWorkflow,
+  getWorkflowRun,
+  getWorkflowRuns,
+  getWorkflowStats,
+  executeWorkflow,
+  cancelWorkflowRun,
+  getRunningWorkflowCount,
+  validateWorkflow,
+} from '../agent/workflows';
 
 export function createApiRouter(): Router {
   const router = Router();
@@ -841,6 +855,209 @@ export function createApiRouter(): Router {
         return;
       }
       res.json({ status: 'deleted' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ==================== Workflows ====================
+
+  router.get('/workflows', (_req: Request, res: Response) => {
+    try {
+      const workflows = getAllWorkflows();
+      res.json(workflows);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/workflows', (req: Request, res: Response) => {
+    try {
+      const { name, description, nodes, edges, triggerChannelIds } = req.body;
+      if (!name || !nodes || !edges) {
+        res.status(400).json({ error: 'name, nodes, and edges are required' });
+        return;
+      }
+
+      // Validate the workflow DAG
+      const validation = validateWorkflow({ nodes, edges });
+      if (!validation.valid) {
+        res.status(400).json({ error: 'Invalid workflow', details: validation.errors });
+        return;
+      }
+
+      const workflow = createWorkflow({ name, description, nodes, edges, triggerChannelIds });
+      res.json(workflow);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/workflows/stats', (_req: Request, res: Response) => {
+    try {
+      const stats = getWorkflowStats();
+      res.json({ ...stats, runningNow: getRunningWorkflowCount() });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/workflows/:id', (req: Request, res: Response) => {
+    try {
+      const workflow = getWorkflow(req.params.id as string);
+      if (!workflow) {
+        res.status(404).json({ error: 'Workflow not found' });
+        return;
+      }
+      res.json(workflow);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.put('/workflows/:id', (req: Request, res: Response) => {
+    try {
+      const { name, description, nodes, edges, enabled, triggerChannelIds } = req.body;
+
+      // If nodes/edges are being updated, validate the DAG
+      if (nodes || edges) {
+        const existing = getWorkflow(req.params.id as string);
+        if (!existing) {
+          res.status(404).json({ error: 'Workflow not found' });
+          return;
+        }
+        const validation = validateWorkflow({
+          nodes: nodes || existing.nodes,
+          edges: edges || existing.edges,
+        });
+        if (!validation.valid) {
+          res.status(400).json({ error: 'Invalid workflow', details: validation.errors });
+          return;
+        }
+      }
+
+      const workflow = updateWorkflow(req.params.id as string, {
+        name,
+        description,
+        nodes,
+        edges,
+        enabled,
+        triggerChannelIds,
+      });
+      res.json(workflow);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  });
+
+  router.delete('/workflows/:id', (req: Request, res: Response) => {
+    try {
+      const deleted = deleteWorkflow(req.params.id as string);
+      if (!deleted) {
+        res.status(404).json({ error: 'Workflow not found' });
+        return;
+      }
+      res.json({ status: 'deleted' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/workflows/:id/toggle', (req: Request, res: Response) => {
+    try {
+      const { enabled } = req.body;
+      if (typeof enabled !== 'boolean') {
+        res.status(400).json({ error: 'enabled (boolean) is required' });
+        return;
+      }
+      const workflow = updateWorkflow(req.params.id as string, { enabled });
+      res.json({ status: 'toggled', id: workflow.id, enabled: workflow.enabled });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/workflows/:id/execute', (req: Request, res: Response) => {
+    try {
+      const workflow = getWorkflow(req.params.id as string);
+      if (!workflow) {
+        res.status(404).json({ error: 'Workflow not found' });
+        return;
+      }
+      if (!workflow.enabled) {
+        res.status(400).json({ error: 'Workflow is disabled' });
+        return;
+      }
+      const { input, channelId } = req.body;
+      if (!input) {
+        res.status(400).json({ error: 'input is required' });
+        return;
+      }
+      // Execute asynchronously
+      void executeWorkflow(workflow, input, channelId);
+      res.json({ status: 'started', workflowId: workflow.id });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/workflows/:id/validate', (req: Request, res: Response) => {
+    try {
+      const workflow = getWorkflow(req.params.id as string);
+      if (!workflow) {
+        res.status(404).json({ error: 'Workflow not found' });
+        return;
+      }
+      const validation = validateWorkflow({ nodes: workflow.nodes, edges: workflow.edges });
+      res.json(validation);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/workflows/:id/runs', (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 20;
+      const runs = getWorkflowRuns(req.params.id as string, limit);
+      res.json(runs);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.get('/workflows/runs/:runId', (req: Request, res: Response) => {
+    try {
+      const run = getWorkflowRun(req.params.runId as string);
+      if (!run) {
+        res.status(404).json({ error: 'Workflow run not found' });
+        return;
+      }
+      res.json(run);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  router.post('/workflows/runs/:runId/cancel', (req: Request, res: Response) => {
+    try {
+      const cancelled = cancelWorkflowRun(req.params.runId as string);
+      if (!cancelled) {
+        res.status(404).json({ error: 'Workflow run not found or not running' });
+        return;
+      }
+      res.json({ status: 'cancelled' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });

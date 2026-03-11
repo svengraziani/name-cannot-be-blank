@@ -8,6 +8,7 @@ import { initAgentGroupsSchema } from './agent/groups';
 import { initA2ASchema } from './agent/a2a';
 import { initSchedulerSchema, startScheduler, startCalendarPolling } from './scheduler';
 import { initHitlSchema, expireStaleApprovals } from './agent/hitl';
+import { initWorkflowSchema } from './agent/workflows';
 import { cleanupStaleWorkspaces } from './agent/tools/git-repo';
 
 async function main() {
@@ -47,6 +48,9 @@ async function main() {
 
   // Initialize HITL approval schema
   initHitlSchema();
+
+  // Initialize workflow builder schema
+  initWorkflowSchema();
 
   // Create HTTP/WS server
   const app = createServer();
